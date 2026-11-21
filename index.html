@@ -645,8 +645,8 @@
                 <div>
                     <label class="block text-xs font-bold text-slate-700 mb-1">우선 사용 모델</label>
                     <select id="api-model-select" onchange="onApiModelAutoSave(this.value)" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold">
-                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (고속 · 안정 추천)</option>
-                        <option value="gemini-3-flash-preview">Gemini 3 Flash Preview (최신 고속)</option>
+                        <option value="gemini-3-flash-preview">Gemini 3 Flash Preview (최신 고속 · 추천)</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (고속 백업)</option>
                         <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (초정밀 출제·감수)</option>
                         <option value="gemini-2.5-pro">Gemini 2.5 Pro (정밀 추론)</option>
                         <option value="gemini-2.0-flash">Gemini 2.0 Flash (호환 백업)</option>
@@ -1416,18 +1416,31 @@
             }
         };
 
-        const ACTIVE_MODELS = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'];
+        const ACTIVE_MODELS = ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'];
+        let sessionWorkingModel = "";
+        const sessionFailedModels = new Set();
 
         function getPreferredModel() {
-            const saved = safeLSGet(STORAGE_KEY_MODEL, '').trim() || cachedApiModel || 'gemini-2.5-flash';
+            const saved = safeLSGet(STORAGE_KEY_MODEL, '').trim() || cachedApiModel || 'gemini-3-flash-preview';
             cachedApiModel = saved;
             return saved;
         }
 
         function buildEndpointAttempts(userKey, preferredModel) {
-            const primary = (preferredModel && preferredModel.trim()) ? preferredModel.trim() : 'gemini-2.5-flash';
-            const merged = [primary, ...(Array.isArray(discoveredModelsCache) ? discoveredModelsCache : []), ...ACTIVE_MODELS];
-            const models = Array.from(new Set(merged.filter(Boolean)));
+            const primary = (preferredModel && preferredModel.trim()) ? preferredModel.trim() : 'gemini-3-flash-preview';
+            const merged = [
+                sessionWorkingModel,
+                primary,
+                ...(Array.isArray(discoveredModelsCache) ? discoveredModelsCache : []),
+                ...ACTIVE_MODELS
+            ];
+            let models = Array.from(new Set(merged.filter(Boolean)));
+            const healthyModels = models.filter(m => !sessionFailedModels.has(m));
+            if (healthyModels.length > 0) {
+                models = healthyModels;
+            } else {
+                sessionFailedModels.clear();
+            }
             const isAQ = userKey.startsWith('AQ.');
             const list = [];
             models.forEach(model => {
@@ -1440,10 +1453,11 @@
                 });
             });
             if (isAQ) {
+                const vertexModel = models[0] || primary;
                 list.push({
-                    label: `Vertex Express (${primary})`,
-                    model: primary,
-                    url: `https://aiplatform.googleapis.com/v1/publishers/google/models/${encodeURIComponent(primary)}:generateContent?key=${encodeURIComponent(userKey)}`,
+                    label: `Vertex Express (${vertexModel})`,
+                    model: vertexModel,
+                    url: `https://aiplatform.googleapis.com/v1/publishers/google/models/${encodeURIComponent(vertexModel)}:generateContent?key=${encodeURIComponent(userKey)}`,
                     headers: { 'Content-Type': 'application/json' },
                     isVertex: true
                 });
@@ -1459,6 +1473,7 @@
         function sortDiscoveredModels(models) {
             return [...models].sort((a, b) => {
                 const score = (n) => {
+                    if (/gemini-3.*flash/i.test(n) && !/lite/i.test(n)) return 70;
                     if (/flash/i.test(n) && !/lite/i.test(n) && /2\.5|3\./.test(n)) return 60;
                     if (/3\..*pro/i.test(n)) return 50;
                     if (/2\.5.*pro/i.test(n)) return 45;
@@ -1560,6 +1575,10 @@
                                 if (errJson?.error?.message) errMsg += ` - ${errJson.error.message.slice(0, 120)}`;
                             } catch (_) {}
                             lastErrDetail = `${attempt.label}: ${errMsg}`;
+                            if ([400, 403, 404].includes(res.status)) {
+                                sessionFailedModels.add(attempt.model);
+                                appendLoadingLog(`↪ ${attempt.label} 미지원(${res.status}) → 다음 활성 모델로 즉시 전환`);
+                            }
 
                             if (res.status === 404 && !didAutoDiscover) {
                                 didAutoDiscover = true;
@@ -1588,6 +1607,13 @@
                         const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
                         if (text) {
                             const parsed = parseAIJsonSafely(text);
+                            // 정상 응답한 모델을 세션 최우선 모델로 고정 및 자동 저장 (다음 호출 헛대기 방지)
+                            sessionWorkingModel = attempt.model;
+                            sessionFailedModels.delete(attempt.model);
+                            if (attempt.model !== getPreferredModel()) {
+                                persistApiCredentials(userKey, attempt.model);
+                                appendLoadingLog(`⚡ 정상 응답 모델 [${attempt.model}]을 기본 모델로 자동 고정했습니다.`);
+                            }
                             return {
                                 data: parsed,
                                 modelUsed: attempt.label,
@@ -1601,7 +1627,9 @@
                         if (activeAbortController === controller) activeAbortController = null;
                         if (isGenerationCancelled) throw new Error("USER_CANCELLED");
                         if (timedOut || err.name === 'AbortError') {
+                            sessionFailedModels.add(attempt.model);
                             lastErrDetail = `${attempt.label}: ${Math.round(timeoutMs / 1000)}초 응답 시간 초과`;
+                            appendLoadingLog(`⏱️ ${attempt.label} 시간 초과 → 해당 모델 제외 후 다음 모델로 전환`);
                             break;
                         }
                         lastErrDetail = `${attempt.label}: 응답 파싱/네트워크 오류 (${err.message || 'Failed to fetch'})`;
@@ -2053,7 +2081,7 @@ ${JSON.stringify(compactDraft)}`;
                 }
             }
 
-            const BATCH_SIZE = 3;
+            const BATCH_SIZE = 5;
             const totalBatches = Math.ceil(count / BATCH_SIZE);
             const collected = [];
             let stage2Batches = 0;
