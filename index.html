@@ -1,86 +1,1522 @@
-<!-- ... existing code ... -->
-        const IDB_NAME = "BMStudioV2DB";
-        const IDB_STORE = "kv";
-
-        let cachedApiKey = "";
-        let cachedApiModel = "gemini-3-flash-preview";
-        let discoveredModelsCache = [];
-        let savedActiveSession = null;
-        let clearApiConfirmArmed = false;
-// ... existing code ...
-                if (window.name && window.name.startsWith('BM_STUDIO_STATE:')) {
-                    obj = JSON.parse(window.name.slice('BM_STUDIO_STATE:'.length)) || {};
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>경영학 출제 스튜디오 v3 · 연핑크 포인트</title>
+    <!-- Tailwind CSS 및 Inter / Noto Sans KR 폰트 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans KR', 'sans-serif']
+                    }
                 }
-                obj.apiKey = key || '';
-                obj.apiModel = model || 'gemini-3-flash-preview';
-                window.name = 'BM_STUDIO_STATE:' + JSON.stringify(obj);
-            } catch (e) {}
-        }
-// ... existing code ...
-        // API 키 및 모델 4중 영구저장 (localStorage + IndexedDB + Cookie + window.name)
-        async function persistApiCredentials(key, model) {
-            const cleanKey = sanitizeApiKey(key);
-            const cleanModel = (model && String(model).trim()) ? String(model).trim() : (cachedApiModel || 'gemini-3-flash-preview');
-            cachedApiKey = cleanKey;
-            cachedApiModel = cleanModel;
-// ... existing code ...
-            const rawRestoredModel = [
-                safeLSGet(STORAGE_KEY_MODEL, '').trim(),
-                typeof idbApiModel === 'string' ? idbApiModel.trim() : '',
-                getCookieSafe(STORAGE_KEY_MODEL).trim(),
-                String(wnState.apiModel || '').trim()
-            ].find(v => v.length > 0) || 'gemini-3-flash-preview';
-
-            // 기존 저장소에 남아있는 미지원/구형 모델명은 정상 활성 모델로 자동 정리
-            const restoredModel = /^(gemini-2\.5-|gemini-3\.8-|gemini-3\.6-)/i.test(rawRestoredModel)
-                ? 'gemini-3-flash-preview'
-                : rawRestoredModel;
-
-            if (restoredKey || restoredModel) {
-                await persistApiCredentials(restoredKey, restoredModel);
             }
-// ... existing code ...
-        function parseAIJsonSafely(text) {
-            const cleaned = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-            try {
-                return JSON.parse(cleaned);
-            } catch (_) {
-                const start = cleaned.indexOf('[');
-                const end = cleaned.lastIndexOf(']');
-                if (start !== -1 && end > start) {
-                    return JSON.parse(cleaned.slice(start, end + 1));
+        };
+    </script>
+    <style>
+        /* 높은 가독성을 위한 깔끔한 뉴트럴 화이트 배경 및 짙은 슬레이트 텍스트 */
+        body {
+            background-color: #f8f9fb;
+            color: #0f172a;
+            overflow-x: hidden;
+        }
+        .hide { display: none !important; }
+
+        /* 조합형 <보기> 전용 스타일 */
+        .exam-bogi-box {
+            border: 1.5px solid #334155;
+            position: relative;
+            background: #ffffff;
+        }
+        .exam-bogi-label {
+            position: absolute;
+            top: -11px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #ffffff;
+            padding: 0 12px;
+            font-size: 12px;
+            font-weight: 800;
+            color: #1e293b;
+            letter-spacing: 0.08em;
+        }
+
+        /* 선지 오답 소거(취소선) 스타일 */
+        .option-eliminated {
+            text-decoration: line-through;
+            color: #94a3b8 !important;
+            background-color: #f8fafc !important;
+            opacity: 0.65;
+        }
+
+        /* 전역 토스트 알림 애니메이션 */
+        #toast-box {
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .toast-hidden {
+            opacity: 0;
+            transform: translate(-50%, -18px);
+            pointer-events: none;
+        }
+        .toast-visible {
+            opacity: 1;
+            transform: translate(-50%, 0);
+            pointer-events: auto;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans antialiased">
+
+    <!-- ================= 전역 토스트 알림 (alert 대체) ================= -->
+    <div id="toast-box" class="fixed top-4 left-1/2 z-50 toast-hidden w-[92%] max-w-md bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl border border-slate-700 flex items-start gap-3">
+        <span id="toast-icon" class="text-lg shrink-0 mt-0.5">✅</span>
+        <div class="min-w-0 flex-1">
+            <div id="toast-title" class="text-xs font-extrabold text-white">알림</div>
+            <div id="toast-desc" class="text-[11px] text-slate-300 leading-snug mt-0.5 break-words">메시지</div>
+        </div>
+    </div>
+
+    <!-- ================= 상단 네비게이션 헤더 ================= -->
+    <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+            <!-- 좌측 브랜드 로고 및 상태 배지 -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white font-black text-sm flex items-center justify-center shadow-sm shadow-pink-200 shrink-0">
+                    BM
+                </div>
+                <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h1 class="text-sm sm:text-base font-black text-slate-900 tracking-tight">경영학 출제 스튜디오</h1>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-50 text-pink-600 border border-pink-200">v3.0</span>
+                        <span id="api-mode-badge" class="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                            📚 검증 샘플 6문항 CBT 모드
+                        </span>
+                    </div>
+                    <p class="text-[11px] text-slate-500">CPA · 공기업 6대 경영학 (재무관리·회계 완전 제외)</p>
+                </div>
+            </div>
+
+            <!-- 우측 탭 네비게이션 -->
+            <nav class="flex items-center gap-1.5 overflow-x-auto max-w-full pb-0.5 sm:pb-0">
+                <button id="nav-setup" type="button" onclick="switchTab('setup')" class="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-rose-500 text-white shadow-sm shadow-rose-200 transition whitespace-nowrap">
+                    🎯 출제
+                </button>
+                <button id="nav-analytics" type="button" onclick="switchTab('analytics')" class="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-pink-50 hover:text-rose-600 transition whitespace-nowrap">
+                    📊 통계·약점
+                </button>
+                <button id="nav-bank" type="button" onclick="switchTab('bank')" class="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-pink-50 hover:text-rose-600 transition whitespace-nowrap flex items-center gap-1.5">
+                    <span>📚 문제은행</span>
+                    <span id="badge-bank-count" class="px-1.5 py-0.5 rounded-full bg-pink-100 text-rose-600 text-[10px] font-black">6</span>
+                </button>
+                <button id="nav-wrong" type="button" onclick="switchTab('wrong')" class="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-pink-50 hover:text-rose-600 transition whitespace-nowrap flex items-center gap-1.5">
+                    <span>🔥 오답노트</span>
+                    <span id="badge-wrong-count" class="px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-600 text-[10px] font-black">0</span>
+                </button>
+                <button id="nav-api" type="button" onclick="openApiModal()" class="px-3.5 py-2.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:border-pink-300 hover:bg-pink-50/50 transition whitespace-nowrap">
+                    ⚙️ API
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- ================= 메인 컨테이너 ================= -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+
+        <!-- ======================================================= -->
+        <!-- [화면 1] 출제 설계 스튜디오 -->
+        <!-- ======================================================= -->
+        <section id="tab-setup" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+            <!-- 좌측 7컬럼: 출제 조건 설계 카드 3종 -->
+            <div class="lg:col-span-7 space-y-5">
+
+                <!-- STEP 01: 6대 과목 선택 -->
+                <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <span class="text-[10px] font-extrabold uppercase tracking-wider text-pink-500">STEP 01</span>
+                            <h2 class="text-base font-black text-slate-900">출제 과목 선택 <span class="text-xs font-semibold text-rose-500">(재무관리·회계 제외)</span></h2>
+                        </div>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button type="button" onclick="applySubjectPreset('ALL')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-pink-50 hover:text-rose-600 text-slate-700 transition">전 과목(6)</button>
+                            <button type="button" onclick="applySubjectPreset('NON_QUANT')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-pink-50 hover:text-rose-600 text-slate-700 transition">비계량(5)</button>
+                            <button type="button" onclick="applySubjectPreset('OM')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-pink-50 hover:text-rose-600 text-slate-700 transition">생산운영 단독</button>
+                        </div>
+                    </div>
+
+                    <div id="subject-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5"></div>
+
+                    <!-- 1개 과목 단독 선택 시 노출되는 세부 주제 영역 -->
+                    <div id="topic-section" class="hide pt-3 border-t border-slate-100 space-y-2.5">
+                        <div class="flex items-center justify-between">
+                            <label class="text-xs font-extrabold text-rose-600">📌 세부 빈출 주제 집중 공략 (선택 사항)</label>
+                            <button type="button" onclick="clearTopicSelection()" class="text-[11px] font-bold text-slate-400 hover:text-slate-700">주제 초기화</button>
+                        </div>
+                        <div id="topic-chips" class="flex flex-wrap gap-1.5"></div>
+                        <input id="custom-topic-input" type="text" oninput="onCustomTopicInput(this.value)" placeholder="원하는 세부 이론/학자 직접 입력 (예: 포터, 허츠버그, EOQ, 채찍효과)" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-pink-300">
+                    </div>
+                </div>
+
+                <!-- STEP 02: 문항 출제 구조 -->
+                <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <span class="text-[10px] font-extrabold uppercase tracking-wider text-pink-500">STEP 02</span>
+                            <h2 class="text-base font-black text-slate-900">문항 출제 구조 <span class="text-xs font-semibold text-slate-500">(복수 선택 가능)</span></h2>
+                        </div>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button type="button" onclick="applyTypePreset('ALL')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-pink-50 hover:text-rose-600 text-slate-700 transition">4대 유형 전체</button>
+                            <button type="button" onclick="applyTypePreset('THEORY_BOGI')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-pink-50 hover:text-rose-600 text-slate-700 transition">이론+조합</button>
+                            <button type="button" onclick="applyTypePreset('HARD_CASE')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-pink-50 hover:text-rose-600 text-slate-700 transition">조합+사례</button>
+                        </div>
+                    </div>
+
+                    <div id="type-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5"></div>
+                    <p class="text-[11px] text-slate-500">※ 계산형 문항은 <b class="text-slate-700">생산운영관리</b> 영역(EOQ·리틀의 법칙·지수평활법 등)에만 안전하게 배정됩니다.</p>
+                </div>
+
+                <!-- STEP 03: 문항 수 · 난이도 · 출제 함정 -->
+                <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-5">
+                    <div>
+                        <span class="text-[10px] font-extrabold uppercase tracking-wider text-pink-500">STEP 03</span>
+                        <h2 class="text-base font-black text-slate-900">문항 수 · 난이도 · 출제 함정 설계</h2>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-2">출제 문항 수 (현재 1-3단계 검증용 6문항 풀 기반)</label>
+                        <div id="cnt-grid" class="grid grid-cols-3 sm:grid-cols-6 gap-2"></div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-2">출제 난이도</label>
+                            <div id="diff-grid" class="grid grid-cols-3 gap-2"></div>
+                        </div>
+                        <div>
+                            <label for="trap-select" class="block text-xs font-bold text-slate-600 mb-2">집중 함정 패턴</label>
+                            <select id="trap-select" onchange="setTrapFilter(this.value)" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-pink-300">
+                                <option value="ALL">🎲 5대 출제 함정 골고루 출제</option>
+                                <option value="학자·이론 교차 바꿔치기">학자·이론 교차 바꿔치기</option>
+                                <option value="증감·방향성 반전">증감·방향성 반전</option>
+                                <option value="극단적 단정어(항상·모두·유일)">극단적 단정어(항상·모두·유일)</option>
+                                <option value="인과·선후관계 역전">인과·선후관계 역전</option>
+                                <option value="유사 개념·용어 혼동">유사 개념·용어 혼동</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 우측 5컬럼: 실시간 출제 설계도 & 검수 패널 -->
+            <div class="lg:col-span-5 lg:sticky lg:top-20">
+                <div class="bg-white text-slate-900 rounded-3xl p-6 shadow-lg shadow-slate-200/70 border border-slate-200 border-t-4 border-t-pink-400 space-y-5">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <span class="text-[10px] font-extrabold uppercase tracking-wider text-pink-500">LIVE BLUEPRINT</span>
+                            <h3 class="text-lg font-black text-slate-900">실시간 출제 설계도</h3>
+                        </div>
+                        <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-pink-50 text-rose-600 border border-pink-200">1-3단계 CBT 가동</span>
+                    </div>
+
+                    <!-- 설계 요약 박스 -->
+                    <div class="bg-slate-50 rounded-2xl p-4 space-y-2.5 text-xs border border-slate-200/80">
+                        <div class="flex justify-between gap-2">
+                            <span class="text-slate-500 shrink-0">선택 과목</span>
+                            <span id="bp-subjects" class="font-bold text-slate-900 text-right">전 과목 (6대 과목)</span>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <span class="text-slate-500 shrink-0">문항 구조</span>
+                            <span id="bp-types" class="font-bold text-slate-800 text-right">이론형 + 조합형 + 사례형 + 계산형</span>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <span class="text-slate-500 shrink-0">함정 / 난이도</span>
+                            <span id="bp-trap" class="font-bold text-rose-600 text-right">5대 함정 혼합 · 실전</span>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <span class="text-slate-500 shrink-0">문항 수 / 정답 분산</span>
+                            <span id="bp-count" class="font-bold text-slate-900 text-right">5문항 (①~⑤ 균등 셔플)</span>
+                        </div>
+                        <div class="flex justify-between gap-2 pt-2 border-t border-slate-200">
+                            <span class="text-slate-500 shrink-0">출제 범위 안전장치</span>
+                            <span class="font-extrabold text-rose-600 text-right">🚫 재무관리·회계 완전 배제</span>
+                        </div>
+                    </div>
+
+                    <!-- 검수 파이프라인 선택 박스 -->
+                    <div class="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-extrabold text-slate-900">AI 출제 · 검수 파이프라인</span>
+                            <span class="text-[10px] font-bold text-pink-600">3단계에서 API 연동</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button id="pipe-pro" type="button" onclick="setPipelineMode('pro')" class="py-2.5 px-2.5 rounded-xl text-xs font-extrabold bg-rose-500 text-white shadow-sm transition">
+                                🔬 2단계 정밀 검수
+                            </button>
+                            <button id="pipe-fast" type="button" onclick="setPipelineMode('fast')" class="py-2.5 px-2.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:border-pink-300 hover:bg-pink-50/50 transition">
+                                ⚡ 1단계 고속 출제
+                            </button>
+                        </div>
+                        <p id="pipe-desc" class="text-[11px] text-slate-600 leading-relaxed">
+                            현재는 <b class="text-slate-800">1-2 &amp; 1-3단계</b>로, 버튼·설계도·탭 전환과 6대 과목 검증 샘플을 통한 <b class="text-rose-600">CBT 풀이 → OMR → 타이머 → 채점·6단 해설</b> 전체 흐름이 작동합니다.
+                        </p>
+                    </div>
+
+                    <!-- 출제 시작 버튼 -->
+                    <button id="btn-generate-quiz" type="button" onclick="generateAndStartQuiz()" class="w-full py-4 rounded-2xl bg-rose-500 hover:bg-rose-600 active:scale-[0.99] text-white font-black text-sm shadow-md shadow-rose-200 transition flex items-center justify-center gap-2">
+                        <span>🚀 문항 출제 및 시험 시작하기</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ======================================================= -->
+        <!-- [화면 2] 실전 CBT 시험장 + 우측 OMR 패널 -->
+        <!-- ======================================================= -->
+        <section id="tab-quiz" class="hide grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+            <!-- 좌측 8컬럼: 시험 문제 영역 -->
+            <div class="lg:col-span-8 space-y-4">
+                <!-- 상단 진행률 및 타이머 바 -->
+                <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <span id="quiz-progress-text" class="text-sm font-black text-rose-600">문항 1 / 5</span>
+                        <div class="w-28 sm:w-44 h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div id="quiz-progress-bar" class="h-full bg-rose-500 transition-all duration-300" style="width: 20%;"></div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="quiz-timer-display" class="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-800 font-mono text-xs font-extrabold">⏱️ 00:00</span>
+                        <button id="btn-timer-toggle" type="button" onclick="toggleTimerPause()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-pink-50 hover:text-rose-600 text-xs font-bold text-slate-700 transition">일시정지</button>
+                    </div>
+                </div>
+
+                <!-- 문항 본문 카드 + 일시정지 블라인드 -->
+                <div class="relative bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-sm space-y-5 overflow-hidden">
+                    <!-- 타이머 일시정지 블라인드 오버레이 -->
+                    <div id="quiz-pause-overlay" class="hide absolute inset-0 z-20 bg-slate-900/95 backdrop-blur-md flex flex-col items-center justify-center text-center p-6 space-y-4">
+                        <div class="text-3xl">⏸️</div>
+                        <div class="text-lg font-black text-white">시험 타이머가 일시정지되었습니다</div>
+                        <p class="text-xs text-slate-300">실전 환경 유지를 위해 일시정지 중에는 문항이 가려집니다.</p>
+                        <button type="button" onclick="toggleTimerPause()" class="px-6 py-3 rounded-2xl bg-rose-500 hover:bg-rose-400 text-white font-extrabold text-sm transition">
+                            ▶ 시험 계속 풀기
+                        </button>
+                    </div>
+
+                    <!-- 문항 메타 배지 & 검토 표시 버튼 -->
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <span id="quiz-subject-badge" class="px-2.5 py-1 rounded-lg bg-pink-50 text-rose-600 border border-pink-200 text-xs font-extrabold">과목</span>
+                            <span id="quiz-type-badge" class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">유형</span>
+                            <span id="quiz-trap-badge" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold">함정</span>
+                        </div>
+                        <button id="btn-flag-question" type="button" onclick="toggleFlagCurrentQuestion()" class="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-amber-50 hover:text-amber-700 transition">
+                            ☆ 검토 표시
+                        </button>
+                    </div>
+
+                    <!-- 발문 -->
+                    <h2 id="quiz-stem" class="text-base sm:text-lg font-bold text-slate-900 leading-relaxed"></h2>
+
+                    <!-- 기업 사례형 박스 -->
+                    <div id="quiz-case-box" class="hide p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-300 space-y-1.5">
+                        <div class="text-xs font-black text-rose-600">🏢 기업 사례 (Case Study)</div>
+                        <p id="quiz-case-text" class="text-sm text-slate-800 leading-relaxed"></p>
+                    </div>
+
+                    <!-- 조합형 <보기> 박스 -->
+                    <div id="quiz-bogi-box" class="hide exam-bogi-box rounded-xl p-5 pt-6 mt-3">
+                        <span class="exam-bogi-label">&lt; 보 기 &gt;</span>
+                        <div id="quiz-bogi-list" class="space-y-2 text-sm text-slate-800 leading-relaxed"></div>
+                    </div>
+
+                    <!-- 5지선다 선택지 목록 -->
+                    <div id="quiz-options-list" class="space-y-2.5 pt-2"></div>
+
+                    <!-- 하단 문항 이동 및 채점 바 -->
+                    <div class="flex items-center justify-between pt-4 border-t border-slate-100 gap-2">
+                        <button id="btn-prev-q" type="button" onclick="moveQuestion(-1)" class="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm transition">
+                            ← 이전 문항
+                        </button>
+                        <div class="text-[11px] text-slate-400 hidden sm:block">단축키: 숫자 1~5 답안 선택 · ← / → 이동</div>
+                        <div class="flex items-center gap-2">
+                            <button id="btn-next-q" type="button" onclick="moveQuestion(1)" class="px-4 py-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs sm:text-sm transition">
+                                다음 문항 →
+                            </button>
+                            <button id="btn-submit-quiz" type="button" onclick="requestSubmitQuiz()" class="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm shadow-sm transition">
+                                ✅ 채점하기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 우측 4컬럼: 실시간 OMR 마킹 패널 -->
+            <div class="lg:col-span-4 lg:sticky lg:top-20">
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-black text-slate-900">📋 OMR 답안 마킹 현황</h3>
+                        <div class="flex items-center gap-2 text-[11px] font-bold">
+                            <span class="text-rose-600">답변 <span id="omr-answered-count">0</span>/<span id="omr-total-count">0</span></span>
+                            <span class="text-amber-600">★ <span id="omr-flagged-count">0</span></span>
+                        </div>
+                    </div>
+                    <div id="omr-grid" class="grid grid-cols-5 gap-2 max-h-80 overflow-y-auto pr-1"></div>
+                    <div class="pt-3 border-t border-slate-100 space-y-2">
+                        <button type="button" onclick="requestSubmitQuiz()" class="w-full py-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs transition shadow-sm">
+                            최종 답안 제출 및 초심층 해설 보기
+                        </button>
+                        <button type="button" onclick="switchTab('setup')" class="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition">
+                            출제 스튜디오로 돌아가기
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ======================================================= -->
+        <!-- [화면 3] 채점 결과 & 교과서급 초심층 6단 해설 -->
+        <!-- ======================================================= -->
+        <section id="tab-result" class="hide space-y-6">
+            <!-- 상단 점수 요약 카드 -->
+            <div class="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
+                <div class="space-y-2">
+                    <span class="px-2.5 py-1 rounded-full bg-pink-50 text-rose-600 border border-pink-200 text-[11px] font-extrabold">채점 및 초심층 6단 해설 완료</span>
+                    <div class="flex items-baseline gap-3 flex-wrap">
+                        <span id="result-score-big" class="text-4xl sm:text-5xl font-black text-slate-900">0점</span>
+                        <span class="text-sm font-bold text-slate-600">(<span id="result-correct-count">0</span> / <span id="result-total-count">0</span>문항 정답 · 소요 <span id="result-time-spent">00:00</span>)</span>
+                    </div>
+                    <p id="result-audit-summary" class="text-xs text-emerald-700 font-bold">🛡️ 6대 과목 검증 샘플 통과 · 재무관리·회계 혼입 0건</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" onclick="retryWrongFromCurrentQuiz()" class="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs transition shadow-sm">
+                        🔥 틀린 문항만 다시 풀기
+                    </button>
+                    <button type="button" onclick="switchTab('setup')" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition">
+                        🎯 새 모의고사 출제
+                    </button>
+                </div>
+            </div>
+
+            <!-- 결과 필터 바 -->
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="setResultFilter('ALL')" data-rf="ALL" class="rf-btn px-3.5 py-2 rounded-xl text-xs font-extrabold bg-rose-500 text-white">전체 문항</button>
+                    <button type="button" onclick="setResultFilter('WRONG')" data-rf="WRONG" class="rf-btn px-3.5 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-700">오답만 보기</button>
+                    <button type="button" onclick="setResultFilter('CORRECT')" data-rf="CORRECT" class="rf-btn px-3.5 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-700">정답만 보기</button>
+                </div>
+                <div class="text-xs font-bold text-slate-500">틀린 문항은 상단 🔥 오답노트 탭에 자동 반영되었습니다.</div>
+            </div>
+
+            <!-- 문항별 초심층 6단 해설 카드 리스트 -->
+            <div id="result-review-list" class="space-y-5"></div>
+        </section>
+
+        <!-- ======================================================= -->
+        <!-- [화면 4] 통계·약점 탭 (현재 세션 요약 · 4-1단계 차트 확장 예정) -->
+        <!-- ======================================================= -->
+        <section id="tab-analytics" class="hide space-y-5">
+            <div class="bg-white rounded-3xl p-6 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm space-y-3">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                        <h2 class="text-lg font-black text-slate-900">📊 학습 통계 · 약점 분석</h2>
+                        <p class="text-xs text-slate-500">현재 세션 누적 응시 요약입니다. 상세 차트 시각화는 4-1단계에서 연결됩니다.</p>
+                    </div>
+                    <button type="button" onclick="switchTab('setup')" class="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition">🎯 모의고사 풀러 가기</button>
+                </div>
+                <div id="analytics-summary-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2"></div>
+            </div>
+        </section>
+
+        <!-- ======================================================= -->
+        <!-- [화면 5] 문제은행 탭 -->
+        <!-- ======================================================= -->
+        <section id="tab-bank" class="hide space-y-5">
+            <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-lg font-black text-slate-900">📚 문제은행 (검증 샘플 6문항)</h2>
+                    <p class="text-xs text-slate-500">6대 과목 핵심 기출이 탑재되어 있습니다. 영구 자동저장은 1-4단계에서 연결됩니다.</p>
+                </div>
+                <button type="button" onclick="startBankAllExam()" class="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition shadow-sm">
+                    ✏️ 문제은행 6문항 전체 풀기
+                </button>
+            </div>
+            <div id="bank-list" class="space-y-4"></div>
+        </section>
+
+        <!-- ======================================================= -->
+        <!-- [화면 6] 오답노트 탭 -->
+        <!-- ======================================================= -->
+        <section id="tab-wrong" class="hide space-y-5">
+            <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-lg font-black text-slate-900">🔥 오답노트 집중 복습</h2>
+                    <p class="text-xs text-slate-500">시험 채점 시 틀린 문항이 이곳에 자동 모입니다. (<span id="wrong-count-label" class="font-bold text-rose-600">0문항</span>)</p>
+                </div>
+                <button type="button" onclick="startWrongNoteExam()" class="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition shadow-sm">
+                    ✏️ 오답 전체 다시 풀기
+                </button>
+            </div>
+            <div id="wrong-list" class="space-y-4"></div>
+        </section>
+
+    </main>
+
+    <!-- ================= 모달 1: 미응답 문항 제출 확인 ================= -->
+    <div id="modal-submit-confirm" class="hide fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-black text-slate-900">⚠️ 아직 풀지 않은 문항이 있습니다</h3>
+                <button type="button" onclick="closeSubmitConfirmModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm">✕</button>
+            </div>
+            <p id="submit-confirm-desc" class="text-xs text-slate-600 leading-relaxed"></p>
+            <div id="submit-unanswered-chips" class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto"></div>
+            <div class="flex gap-2 pt-2">
+                <button type="button" onclick="jumpToFirstUnanswered()" class="flex-1 py-2.5 rounded-xl bg-pink-50 hover:bg-pink-100 text-rose-600 text-xs font-extrabold transition">미응답 문항 풀기</button>
+                <button type="button" onclick="confirmAndGradeQuiz()" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition">그대로 채점하기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 모달 2: API 설정 (1-2단계 UI 모달 · 2단계 영구저장 연결) ================= -->
+    <div id="modal-api" class="hide fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-black text-slate-900">⚙️ AI 모델 및 API 키 설정</h3>
+                <button type="button" onclick="closeApiModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm">✕</button>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">
+                현재는 <b class="text-slate-800">1-2 &amp; 1-3단계</b>로 API 키 없이도 6대 과목 검증 샘플 CBT 시험이 즉시 작동합니다. API 키 4중 영구저장과 실시간 AI 출제 연결은 <b>2~3단계</b>에서 안전하게 붙일 예정입니다.
+            </p>
+            <div class="space-y-3">
+                <div>
+                    <label for="api-model-select" class="block text-xs font-bold text-slate-700 mb-1">기본 추천 모델</label>
+                    <select id="api-model-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800">
+                        <option value="gemini-3-flash-preview">Gemini 3 Flash Preview (고속·안정 추천)</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (표준)</option>
+                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (초정밀 감수)</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="api-key-input" class="block text-xs font-bold text-slate-700 mb-1">개인 Gemini API 키 (2단계에서 영구저장 연동)</label>
+                    <input id="api-key-input" type="password" placeholder="AIza... 또는 AQ.... 키 입력" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-pink-300">
+                </div>
+            </div>
+            <div class="flex gap-2 pt-2">
+                <button type="button" onclick="closeApiModal()" class="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">닫기</button>
+                <button type="button" onclick="saveApiPreviewOnly()" class="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 메인 애플리케이션 스크립트 (1-2 & 1-3단계) ================= -->
+    <script>
+        // ============================================================
+        // 1. 기본 상수 및 과목·유형 메타데이터
+        // ============================================================
+        const CIRCLED = ['①', '②', '③', '④', '⑤'];
+
+        const ALL_SUBJECTS = [
+            "경영일반·전략",
+            "조직행동",
+            "인적자원관리",
+            "마케팅",
+            "생산운영관리",
+            "경영정보시스템"
+        ];
+
+        const SUBJECT_META = {
+            "경영일반·전략": { short: "전략·일반", desc: "포터 · RBV · BCG · 블루오션" },
+            "조직행동": { short: "조직행동", desc: "동기부여 · 리더십 · 구조 · 집단" },
+            "인적자원관리": { short: "인사관리", desc: "직무설계 · 평가 · 선발 · 임금" },
+            "마케팅": { short: "마케팅", desc: "관여도 · 가격 · PLC · 브랜드" },
+            "생산운영관리": { short: "생산운영", desc: "EOQ · JIT · 지수평활 · 6시그마" },
+            "경영정보시스템": { short: "MIS·디지털", desc: "ERP · SCM · 보안 · 클라우드" }
+        };
+
+        const SUBJECT_TOPICS = {
+            "경영일반·전략": ["본원적 경쟁전략", "5-Forces 산업구조분석", "BCG 매트릭스", "자원기반관점(RBV)·VRIO", "블루오션(ERRC)"],
+            "조직행동": ["동기부여 내용이론", "동기부여 과정이론", "상황적 리더십", "기계적·유기적 조직", "집단사고·델파이"],
+            "인적자원관리": ["직무설계(JCM)·직무충실화", "직무평가 4대 기법", "신뢰도·타당도", "인사고과 오류", "집단성과배분"],
+            "마케팅": ["신제품 가격전략", "관여도·FCB 그리드", "제품수명주기(PLC)", "브랜드 확장", "서비스 마케팅 7P"],
+            "생산운영관리": ["경제적 주문량(EOQ)", "리틀의 법칙·TOC", "JIT vs MRP", "단순지수평활법", "품질비용·6시그마"],
+            "경영정보시스템": ["ERP·BPR", "SCM 채찍효과", "정보보안(CIA·전자서명)", "클라우드(IaaS·PaaS·SaaS)", "양면시장·롱테일"]
+        };
+
+        const ALL_QUESTION_TYPES = ["이론형", "조합형", "사례형", "계산형"];
+        const TYPE_META = {
+            "이론형": { icon: "📖", label: "정통 이론형" },
+            "조합형": { icon: "🗂️", label: "ㄱ·ㄴ·ㄷ 조합형" },
+            "사례형": { icon: "🏢", label: "기업 사례형" },
+            "계산형": { icon: "🧮", label: "생산운영 계산형" }
+        };
+
+        // ============================================================
+        // 2. 검증된 6대 과목 샘플 DB (6문항 · 재무관리/회계 완전 제외)
+        // ============================================================
+        const SAMPLE_QUESTIONS = [
+            {
+                id: "v3_strat_1",
+                subject: "경영일반·전략",
+                topic: "본원적 경쟁전략",
+                questionType: "조합형",
+                trapPattern: "학자·이론 교차 바꿔치기",
+                question: "포터(M. Porter)의 본원적 경쟁전략(Generic Strategies)에 관한 설명으로 옳은 것을 모두 고른 것은?",
+                caseBox: "",
+                bogi: [
+                    "ㄱ. 원가우위전략은 규모의 경제와 경험곡선효과, 공정혁신 등을 통해 업계 최저 원가 구조를 구축하는 전략이다.",
+                    "ㄴ. 차별화전략은 표준화된 제품을 대량생산하여 원가를 절감하고 최저 가격으로 경쟁하는 전략이다.",
+                    "ㄷ. 집중화전략은 특정 표적 세분시장에 자원을 집중하여 원가우위 또는 차별화우위를 추구하는 전략이다.",
+                    "ㄹ. 포터는 원가우위와 차별화를 어설프게 동시 추구하면 어느 쪽에서도 우위를 얻지 못하는 '어중간한 상태(Stuck in the middle)'에 빠진다고 경고하였다."
+                ],
+                options: ["ㄱ, ㄴ", "ㄱ, ㄷ", "ㄱ, ㄷ, ㄹ", "ㄴ, ㄷ, ㄹ", "ㄱ, ㄴ, ㄷ, ㄹ"],
+                answer: 3,
+                optionExplanations: [
+                    "[X] ㄴ이 틀렸습니다. 표준화 대량생산을 통한 원가절감은 차별화전략이 아니라 원가우위전략의 핵심입니다.",
+                    "[X] ㄹ 또한 포터 이론과 정확히 일치하므로 누락되었습니다.",
+                    "[O] 정답입니다. ㄱ(원가우위), ㄷ(집중화), ㄹ(어중간한 상태 경고) 모두 포터의 본원적 경쟁전략과 정확히 일치합니다.",
+                    "[X] ㄴ이 원가우위전략의 내용을 차별화전략으로 바꿔치기한 오답입니다.",
+                    "[X] ㄴ이 틀렸으므로 오답입니다."
+                ],
+                keyTakeaway: "포터의 본원적 전략: 원가우위(저원가) · 차별화(독특한 가치·프리미엄) · 집중화(세분시장 특화). 어설픈 동시 추구는 '어중간한 상태'를 초래한다.",
+                deepTheoryNote: "포터는 경쟁우위의 원천(저원가 vs 차별화)과 경쟁범위(전체 vs 세분시장)의 2×2 매트릭스를 제시했습니다. 원가우위기업도 고객이 수용할 최소 품질(차별화 동등성)을 유지해야 합니다.",
+                scholarCompareNote: "포터(본원적 전략: 저비용·차별화 trade-off 강조) vs 블루오션 전략(ERRC 가치혁신으로 저비용·차별화 동시 추구).",
+                trapAnatomy: "원가우위와 차별화의 핵심 수단을 뒤바꾸거나, '어중간한 상태' 경고를 정반대로 서술하는 대표 함정입니다.",
+                examExtensionTip: "'원가우위기업은 품질을 전혀 신경 쓰지 않는다(X)' 같은 극단적 단정어 선지에 주의하세요.",
+                keyTerms: ["Generic Strategies", "Cost Leadership", "Differentiation", "Stuck in the middle"]
+            },
+            {
+                id: "v3_ob_1",
+                subject: "조직행동",
+                topic: "동기부여 내용이론 비교",
+                questionType: "이론형",
+                trapPattern: "유사 개념·용어 혼동",
+                question: "동기부여 내용이론(매슬로우·알더퍼·허츠버그·맥클리랜드)에 관한 설명으로 가장 적절하지 않은 것은?",
+                caseBox: "",
+                bogi: [],
+                options: [
+                    "알더퍼의 ERG 이론은 상위 욕구 좌절 시 하위 욕구로 회귀하는 '좌절-퇴행' 가설을 포함한다.",
+                    "허츠버그 이론에서 급여·작업조건 등 위생요인 충족은 불만족을 해소하지만 적극적 직무만족을 유발하지는 않는다.",
+                    "맥클리랜드 이론에서 고성취욕구자는 성공 확률이 약 50%인 중간 위험 과업을 선호한다.",
+                    "매슬로우 욕구단계설은 하위 욕구가 충족되어야 상위 욕구가 작용하는 '만족-진행' 원리에 기반한다.",
+                    "맥클리랜드는 대규모 조직의 유능한 최고경영자에게 가장 중요한 욕구가 '강력한 성취욕구'와 '높은 친교욕구'라고 주장하였다."
+                ],
+                answer: 5,
+                optionExplanations: [
+                    "[O] 옳은 설명입니다. ERG 이론은 좌절-퇴행과 복수 욕구의 동시 작용을 인정합니다.",
+                    "[O] 옳은 설명입니다. 허츠버그 이원론에서 적극적 만족은 성취·책임 등 동기요인이 유발합니다.",
+                    "[O] 옳은 설명입니다. 고성취욕구자는 본인 노력으로 성패가 갈리는 중간 난이도와 즉각적 피드백을 선호합니다.",
+                    "[O] 옳은 설명입니다. 매슬로우는 결핍에 의한 동기부여와 순차적 만족-진행을 가정합니다.",
+                    "[X] 정답(옳지 않음)입니다. 맥클리랜드는 대규모 조직의 유능한 리더에게는 성취·친교욕구보다 '높은 제도적 권력욕구'와 '낮은 친교욕구'가 가장 중요하다고 보았습니다."
+                ],
+                keyTakeaway: "맥클리랜드 이론: 대규모 조직의 유능한 관리자(리더)에게는 높은 제도적 권력욕구 + 낮은 친교욕구가 핵심이다.",
+                deepTheoryNote: "내용이론 4대 계보: 매슬로우(5단계·만족-진행) → 알더퍼(ERG 3범주·좌절-퇴행) → 허츠버그(위생요인 vs 동기요인·직무충실화) → 맥클리랜드(학습된 성취·권력·친교욕구).",
+                scholarCompareNote: "매슬로우(만족-진행만 인정, 1회 1욕구) vs 알더퍼 ERG(만족-진행 + 좌절-퇴행, 복수 욕구 동시 작용).",
+                trapAnatomy: "'유능한 CEO = 높은 성취욕구'라는 직관적 착각을 파고드는 조직행동 최다 오답률 함정입니다.",
+                examExtensionTip: "허츠버그 이론에서 '만족의 반대는 불만족(X → 만족 없음)'이라는 이원론 함정을 꼭 기억하세요.",
+                keyTerms: ["ERG Theory", "Two-Factor Theory", "Need for Power", "Frustration-Regression"]
+            },
+            {
+                id: "v3_hr_1",
+                subject: "인적자원관리",
+                topic: "직무설계(JCM)·직무충실화",
+                questionType: "사례형",
+                trapPattern: "유사 개념·용어 혼동",
+                question: "다음 (주)대한정밀의 직무재설계 사례를 읽고, 해크만·올드햄(Hackman & Oldham)의 직무특성모형(JCM) 관점에서 가장 적절하게 해석한 것은?",
+                caseBox: "(주)대한정밀은 기존에 단순 조립만 반복하던 작업자들에게 부품 발주, 품질검사, 작업 일정 조정 권한까지 수직적으로 부여하고, 완제품이 고객에게 전달된 뒤의 불량률 피드백을 매주 직접 확인할 수 있게 개편하였다.",
+                bogi: [],
+                options: [
+                    "유사한 난이도의 과업 수만 수평적으로 늘린 '직무확대(Job Enlargement)'에 해당한다.",
+                    "계획·통제 권한을 수직적으로 부여한 '직무충실화(Job Enrichment)'이며, 자율성과 피드백이 높아져 동기잠재점수(MPS)가 크게 상승한다.",
+                    "JCM 공식에서 자율성이나 피드백이 0이 되더라도 기술다양성만 높으면 MPS는 높게 유지된다.",
+                    "성장욕구강도(GNS)가 낮은 구성원일수록 직무충실화의 동기부여 효과가 극대화된다.",
+                    "기술다양성·과업정체성·과업중요성은 '결과에 대한 책임감'이라는 심리상태를 유발한다."
+                ],
+                answer: 2,
+                optionExplanations: [
+                    "[X] 수평적 과업 수 증가가 아니라 계획·검사·통제 권한을 수직적으로 통합한 직무충실화입니다.",
+                    "[O] 정답입니다. 수직적 권한 확대는 직무충실화이며, MPS 공식에서 곱셈 항인 자율성·피드백 증가는 MPS를 크게 높입니다.",
+                    "[X] 자율성과 피드백은 곱셈 항이므로 둘 중 하나라도 0이면 전체 MPS가 0이 됩니다.",
+                    "[X] 성장욕구강도(GNS)가 '높은' 구성원일수록 JCM의 동기부여 효과가 강하게 나타납니다.",
+                    "[X] 기술다양성·과업정체성·과업중요성은 '직무의 의미감'을, 자율성은 '책임감'을, 피드백은 '결과에 대한 지식'을 유발합니다."
+                ],
+                keyTakeaway: "직무충실화 = 수직적 권한·책임 확대. MPS = [(기술다양성+과업정체성+과업중요성)/3] × 자율성 × 피드백.",
+                deepTheoryNote: "직무확대(수평적 과업 수 증가)는 단순 반복 지루함만 줄이지만, 직무충실화(수직적 계획·통제 통합)는 허츠버그의 동기요인을 충족합니다.",
+                scholarCompareNote: "직무순환(교대 배치) vs 직무확대(수평적 과업 추가) vs 직무충실화(수직적 자율·통제 권한 부여).",
+                trapAnatomy: "MPS 공식의 덧셈 항(3개 평균)과 곱셈 항(자율성·피드백)의 성질을 뒤바꾸는 고난도 함정입니다.",
+                examExtensionTip: "5대 핵심직무차원과 3대 중요심리상태(의미감·책임감·결과지식)의 1:1 매칭을 정확히 암기하세요.",
+                keyTerms: ["Job Characteristics Model", "MPS Formula", "Job Enrichment", "GNS"]
+            },
+            {
+                id: "v3_mkt_1",
+                subject: "마케팅",
+                topic: "신제품 가격결정 전략",
+                questionType: "조합형",
+                trapPattern: "학자·이론 교차 바꿔치기",
+                question: "신제품 가격전략인 초기고가전략(Skimming)과 시장침투가격전략(Penetration)에 관한 설명으로 옳은 것을 모두 고른 것은?",
+                caseBox: "",
+                bogi: [
+                    "ㄱ. 초기고가전략은 표적시장의 수요의 가격탄력성이 비탄력적일 때 효과적이다.",
+                    "ㄴ. 시장침투가격전략은 대량생산을 통한 규모의 경제나 경험곡선 효과가 클 때 유리하다.",
+                    "ㄷ. 초기고가전략은 경쟁자의 시장 진입을 강력히 억제하고 초기 점유율을 극대화하기 위해 사용한다.",
+                    "ㄹ. 특허 등으로 모방장벽이 높고 기술적 우위가 뚜렷할수록 초기고가전략이 적합하다."
+                ],
+                options: ["ㄱ, ㄴ", "ㄱ, ㄷ", "ㄷ, ㄹ", "ㄱ, ㄴ, ㄹ", "ㄴ, ㄷ, ㄹ"],
+                answer: 4,
+                optionExplanations: [
+                    "[X] ㄹ 또한 옳은 설명이므로 누락되었습니다.",
+                    "[X] ㄷ이 시장침투가격전략의 내용을 초기고가전략으로 바꿔치기한 오답입니다.",
+                    "[X] ㄷ이 틀렸습니다.",
+                    "[O] 정답입니다. ㄱ(비탄력 수요), ㄴ(규모의 경제·경험곡선), ㄹ(높은 모방장벽 시 초기고가) 모두 정확합니다.",
+                    "[X] ㄷ이 틀렸으므로 오답입니다."
+                ],
+                keyTakeaway: "초기고가(비탄력 수요·특허장벽·초기 R&D 회수·경쟁자 유인 위험) vs 시장침투(탄력 수요·규모의 경제·진입 억제).",
+                deepTheoryNote: "초기고가전략은 높은 초기 마진 때문에 오히려 경쟁자의 시장 진입을 유인하는 위험이 있습니다. 반면 시장침투전략은 저가로 규모의 경제를 선점해 진입 장벽을 높입니다.",
+                scholarCompareNote: "초기고가전략(비탄력·모방장벽 높음) vs 시장침투가격전략(탄력·규모의 경제 큼·진입 억제).",
+                trapAnatomy: "초기고가전략의 약점(경쟁자 유인)을 시장침투전략의 장점(경쟁자 진입 억제)으로 정반대 치환한 함정입니다.",
+                examExtensionTip: "종속제품 가격결정(프린터 본체 저가+카트리지 고가)과 유인손실가격(Loss Leader)도 함께 정리하세요.",
+                keyTerms: ["Skimming Pricing", "Penetration Pricing", "Price Elasticity", "Economies of Scale"]
+            },
+            {
+                id: "v3_om_1",
+                subject: "생산운영관리",
+                topic: "경제적 주문량(EOQ) 모형",
+                questionType: "계산형",
+                trapPattern: "증감·방향성 반전",
+                question: "연간 수요량(D)이 10,000단위이고, 1회 주문비용(S)이 400원, 단위당 연간 재고유지비용(H)이 200원이다. EOQ 모형을 적용할 때 최적 주문량(Q*)과 연간 총 주문횟수는?",
+                caseBox: "",
+                bogi: [],
+                options: [
+                    "최적 주문량: 100단위, 연간 주문횟수: 100회",
+                    "최적 주문량: 200단위, 연간 주문횟수: 50회",
+                    "최적 주문량: 250단위, 연간 주문횟수: 40회",
+                    "최적 주문량: 400단위, 연간 주문횟수: 25회",
+                    "최적 주문량: 500단위, 연간 주문횟수: 20회"
+                ],
+                answer: 2,
+                optionExplanations: [
+                    "[X] 공식 분자에 2를 누락하거나 평균재고(Q*/2)와 혼동한 오답입니다.",
+                    "[O] 정답입니다. EOQ = √(2DS/H) = √((2×10,000×400)/200) = √40,000 = 200단위이며, 연간 주문횟수 = D/Q* = 10,000/200 = 50회입니다.",
+                    "[X] 주문비용과 유지비용의 비율을 잘못 적용한 오답입니다.",
+                    "[X] 최적 주문량 계산 시 제곱근 처리를 잘못한 오답입니다.",
+                    "[X] 주문횟수와 주문량을 혼동한 오답입니다."
+                ],
+                keyTakeaway: "EOQ = √(2DS/H). 최적 주문량 Q*에서는 연간 총 주문비용과 연간 총 재고유지비용이 정확히 일치한다.",
+                deepTheoryNote: "EOQ 민감도 분석에서 D나 S가 4배 증가하면 Q*는 제곱근 비례로 2배 증가합니다. 재주문점(ROP) = 일일 수요(d) × 조달기간(L) + 안전재고입니다.",
+                scholarCompareNote: "EOQ(즉시 일괄 입고, 평균재고 Q/2) vs EPQ(생산·소비 동시 진행, EPQ > EOQ).",
+                trapAnatomy: "공식 속 '2'를 빼먹거나 평균재고(100단위)를 최적주문량으로 착각하도록 오답을 설계합니다.",
+                examExtensionTip: "연간 총 재고관련비용 TC = (D/Q*)S + (Q*/2)H = 20,000 + 20,000 = 40,000원 계산까지 연습하세요.",
+                keyTerms: ["EOQ Model", "Order Cost", "Holding Cost", "ROP"]
+            },
+            {
+                id: "v3_mis_1",
+                subject: "경영정보시스템",
+                topic: "SCM 채찍효과",
+                questionType: "사례형",
+                trapPattern: "증감·방향성 반전",
+                question: "다음 (주)코리안유통의 공급사슬 사례를 읽고, 원인 진단 및 해결 방안으로 가장 적절한 것은?",
+                caseBox: "소매점에서 생수 소비자 수요는 5%만 늘었을 뿐인데 도매상은 15% 증량 발주, 물류센터는 30% 증량 발주, 제조공장은 가동률을 60%까지 급격히 높여 막대한 과잉재고 손실이 발생하였다.",
+                bogi: [],
+                options: [
+                    "공급사슬 하류(소비자)에서 상류(제조사)로 갈수록 수요 변동이 증폭되는 '채찍효과(Bullwhip Effect)'이며, POS 실시간 공유와 VMI·CPFR 도입으로 완화할 수 있다.",
+                    "상류에서 하류로 갈수록 변동이 소멸되는 네트워크 외부성 현상이며, 1회 주문 단위를 대량 일괄발주로 키울수록 해결된다.",
+                    "각 단계별 잦은 프로모션 가격 변동과 긴 리드타임을 유지할수록 수요 왜곡이 줄어든다.",
+                    "각 기업이 판매 데이터를 철저히 비공개로 유지하고 독립 예측할 때 채찍효과가 완전히 제거된다.",
+                    "공급자가 구매자 재고를 모니터링해 보충하는 VMI는 채찍효과를 더욱 악화시킨다."
+                ],
+                answer: 1,
+                optionExplanations: [
+                    "[O] 정답입니다. 하류→상류로 갈수록 수요 변동폭이 증폭되는 현상이 '채찍효과'이며 POS 공유, VMI, CPFR, EDLP(상시저가)가 핵심 해결책입니다.",
+                    "[X] 대량 일괄발주(Order Batching)는 채찍효과를 유발하는 대표 원인 중 하나입니다.",
+                    "[X] 잦은 가격 할인(선행구매 유발)과 긴 리드타임은 채찍효과를 악화시킵니다.",
+                    "[X] 정보 비공개와 다단계 독립 수요예측이 바로 채찍효과의 근본 원인입니다.",
+                    "[X] VMI(공급자 주도 재고관리)는 다단계 정보 왜곡을 줄여 채찍효과를 완화합니다."
+                ],
+                keyTakeaway: "채찍효과(하류→상류 수요 왜곡 증폭)의 4대 원인: 수요예측 갱신 · 일괄발주 · 가격변동 · 부족배분 게임. 해결책: POS 공유 · VMI · CPFR · EDLP.",
+                deepTheoryNote: "크로스도킹(Cross-docking)은 물류센터 보관 없이 입고 즉시 소매점별 차량으로 환적·출고하여 재고유지비와 리드타임을 단축하는 대표 SCM 기법입니다.",
+                scholarCompareNote: "채찍효과 원인(일괄발주·잦은 할인·긴 리드타임) vs 해결책(소량 빈번발주·EDLP 상시저가·POS 실시간 공유·VMI).",
+                trapAnatomy: "채찍효과의 진행 방향(하류→상류)을 거꾸로 바꾸거나 원인과 해결책을 뒤바꾸는 대표 함정입니다.",
+                examExtensionTip: "채찍효과 방향이 '상류(제조사)에서 하류(소매점)로 증폭(X)'이라고 나오면 즉각 오답으로 거르세요.",
+                keyTerms: ["Bullwhip Effect", "VMI", "CPFR", "EDLP"]
+            }
+        ];
+
+        // ============================================================
+        // 3. 앱 상태 변수 (메모리 기반 · 1-4단계에서 영구저장 연결)
+        // ============================================================
+        let selectedSubjects = [...ALL_SUBJECTS];
+        let selectedTopic = "";
+        let selectedQuestionTypes = [...ALL_QUESTION_TYPES];
+        let selectedQuestionCount = 5;
+        let selectedDifficulty = "실전";
+        let selectedTrapFilter = "ALL";
+        let selectedPipelineMode = "pro";
+
+        let questionBank = SAMPLE_QUESTIONS.map(q => ({ ...q }));
+        let wrongNotes = [];
+        let sessionStats = { sessions: 0, totalSolved: 0, totalCorrect: 0 };
+
+        let currentQuizList = [];
+        let currentQuizIndex = 0;
+        let userAnswers = {};
+        let flaggedSet = new Set();
+        let eliminatedMap = {};
+        let resultFilter = "ALL";
+
+        let timerSeconds = 0;
+        let timerInterval = null;
+        let isTimerPaused = false;
+
+        // ============================================================
+        // 4. 공통 유틸 (HTML 이스케이프 · 토스트 · 탭 전환)
+        // ============================================================
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        let toastTimer = null;
+        function showToast(title, desc, icon = "✅") {
+            const box = document.getElementById('toast-box');
+            document.getElementById('toast-icon').innerText = icon;
+            document.getElementById('toast-title').innerText = title;
+            document.getElementById('toast-desc').innerText = desc;
+            box.classList.remove('toast-hidden');
+            box.classList.add('toast-visible');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                box.classList.remove('toast-visible');
+                box.classList.add('toast-hidden');
+            }, 3200);
+        }
+
+        function updateHeaderBadges() {
+            document.getElementById('badge-bank-count').innerText = questionBank.length;
+            document.getElementById('badge-wrong-count').innerText = wrongNotes.length;
+        }
+
+        function switchTab(tabName) {
+            ['setup', 'quiz', 'result', 'analytics', 'bank', 'wrong'].forEach(t => {
+                const el = document.getElementById(`tab-${t}`);
+                if (el) el.classList.toggle('hide', t !== tabName);
+            });
+            ['setup', 'analytics', 'bank', 'wrong'].forEach(t => {
+                const btn = document.getElementById(`nav-${t}`);
+                if (!btn) return;
+                if (t === tabName) {
+                    btn.className = "px-3.5 py-2.5 rounded-xl text-xs font-bold bg-rose-500 text-white shadow-sm shadow-rose-200 transition whitespace-nowrap flex items-center gap-1.5";
+                } else {
+                    btn.className = "px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-pink-50 hover:text-rose-600 transition whitespace-nowrap flex items-center gap-1.5";
                 }
-                throw new Error("AI JSON 응답 형식 오류");
+            });
+
+            if (tabName !== 'quiz') stopTimer();
+            if (tabName === 'analytics') renderAnalyticsSummary();
+            if (tabName === 'bank') renderBankList();
+            if (tabName === 'wrong') renderWrongList();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // ============================================================
+        // 5. [1-2단계] 출제 스튜디오 설정 UI 렌더링 및 제어
+        // ============================================================
+        function renderSubjectCards() {
+            const grid = document.getElementById('subject-grid');
+            grid.innerHTML = ALL_SUBJECTS.map(sub => {
+                const active = selectedSubjects.includes(sub);
+                const meta = SUBJECT_META[sub];
+                return `
+                    <button type="button" onclick="toggleSubject('${sub}')" class="p-3.5 rounded-2xl text-left border-2 transition ${active ? 'border-pink-300 bg-pink-50/50 hover:bg-pink-50' : 'border-slate-200 bg-white hover:border-pink-200'}">
+                        <div class="flex items-center justify-between gap-1">
+                            <span class="text-xs font-black ${active ? 'text-slate-900' : 'text-slate-600'}">${sub}</span>
+                            <span class="text-[11px] font-black ${active ? 'text-rose-500' : 'text-slate-300'}">${active ? '✓' : '○'}</span>
+                        </div>
+                        <div class="text-[11px] text-slate-500 mt-1 truncate">${meta.desc}</div>
+                    </button>
+                `;
+            }).join('');
+
+            const topicSec = document.getElementById('topic-section');
+            if (selectedSubjects.length === 1) {
+                topicSec.classList.remove('hide');
+                const topics = SUBJECT_TOPICS[selectedSubjects[0]] || [];
+                document.getElementById('topic-chips').innerHTML = topics.map(t => {
+                    const isSel = selectedTopic === t;
+                    return `<button type="button" onclick="selectTopicChip('${t.replace(/'/g, "\\'")}')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition ${isSel ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-700 border-slate-200 hover:border-pink-300'}">${escapeHtml(t)}</button>`;
+                }).join('');
+            } else {
+                topicSec.classList.add('hide');
+                selectedTopic = "";
+                const inp = document.getElementById('custom-topic-input');
+                if (inp) inp.value = "";
+            }
+            updateBlueprintPreview();
+        }
+
+        function toggleSubject(sub) {
+            if (selectedSubjects.includes(sub)) {
+                if (selectedSubjects.length === 1) {
+                    showToast("최소 1개 과목 필요", "출제할 과목은 최소 1개 이상 선택해야 합니다.", "⚠️");
+                    return;
+                }
+                selectedSubjects = selectedSubjects.filter(s => s !== sub);
+            } else {
+                selectedSubjects.push(sub);
+            }
+            selectedTopic = "";
+            renderSubjectCards();
+        }
+
+        function applySubjectPreset(preset) {
+            if (preset === 'ALL') selectedSubjects = [...ALL_SUBJECTS];
+            else if (preset === 'NON_QUANT') selectedSubjects = ALL_SUBJECTS.filter(s => s !== '생산운영관리');
+            else if (preset === 'OM') selectedSubjects = ['생산운영관리'];
+            selectedTopic = "";
+            renderSubjectCards();
+        }
+
+        function selectTopicChip(topic) {
+            selectedTopic = (selectedTopic === topic) ? "" : topic;
+            document.getElementById('custom-topic-input').value = selectedTopic;
+            renderSubjectCards();
+        }
+
+        function onCustomTopicInput(val) {
+            selectedTopic = val.trim();
+            updateBlueprintPreview();
+        }
+
+        function clearTopicSelection() {
+            selectedTopic = "";
+            document.getElementById('custom-topic-input').value = "";
+            renderSubjectCards();
+        }
+
+        function renderTypeCards() {
+            const grid = document.getElementById('type-grid');
+            grid.innerHTML = ALL_QUESTION_TYPES.map(t => {
+                const active = selectedQuestionTypes.includes(t);
+                const meta = TYPE_META[t];
+                return `
+                    <button type="button" onclick="toggleQuestionType('${t}')" class="p-3 rounded-2xl border-2 text-left transition ${active ? 'border-pink-300 bg-pink-50/50 hover:bg-pink-50' : 'border-slate-200 bg-white hover:border-pink-200'}">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm">${meta.icon}</span>
+                            <span class="text-[11px] font-black ${active ? 'text-rose-500' : 'text-slate-300'}">${active ? '✓' : '○'}</span>
+                        </div>
+                        <div class="text-xs font-extrabold mt-1 ${active ? 'text-slate-900' : 'text-slate-600'}">${meta.label}</div>
+                    </button>
+                `;
+            }).join('');
+            updateBlueprintPreview();
+        }
+
+        function toggleQuestionType(type) {
+            if (selectedQuestionTypes.includes(type)) {
+                if (selectedQuestionTypes.length === 1) {
+                    showToast("최소 1개 구조 필요", "문항 구조는 최소 1개 이상 선택해야 합니다.", "⚠️");
+                    return;
+                }
+                selectedQuestionTypes = selectedQuestionTypes.filter(x => x !== type);
+            } else {
+                selectedQuestionTypes.push(type);
+            }
+            renderTypeCards();
+        }
+
+        function applyTypePreset(preset) {
+            if (preset === 'ALL') selectedQuestionTypes = [...ALL_QUESTION_TYPES];
+            else if (preset === 'THEORY_BOGI') selectedQuestionTypes = ['이론형', '조합형'];
+            else if (preset === 'HARD_CASE') selectedQuestionTypes = ['조합형', '사례형'];
+            renderTypeCards();
+        }
+
+        function renderCountAndDiffButtons() {
+            const counts = [5, 10, 15, 20, 30, 40];
+            document.getElementById('cnt-grid').innerHTML = counts.map(c => {
+                const active = selectedQuestionCount === c;
+                return `<button type="button" onclick="setQuestionCount(${c})" class="py-2.5 rounded-xl text-xs font-extrabold border-2 transition ${active ? 'border-rose-400 bg-pink-50 text-rose-600' : 'border-slate-200 bg-white text-slate-700 hover:border-pink-200 hover:bg-pink-50/40'}">${c === 40 ? '40문항(풀)' : c + '문항'}</button>`;
+            }).join('');
+
+            const diffs = ["기본", "실전", "고난도"];
+            document.getElementById('diff-grid').innerHTML = diffs.map(d => {
+                const active = selectedDifficulty === d;
+                return `<button type="button" onclick="setDifficulty('${d}')" class="py-2.5 rounded-xl text-xs font-extrabold border-2 transition ${active ? 'border-rose-400 bg-pink-50 text-rose-600' : 'border-slate-200 bg-white text-slate-700 hover:border-pink-200 hover:bg-pink-50/40'}">${d}</button>`;
+            }).join('');
+            updateBlueprintPreview();
+        }
+
+        function setQuestionCount(c) {
+            selectedQuestionCount = c;
+            renderCountAndDiffButtons();
+        }
+
+        function setDifficulty(d) {
+            selectedDifficulty = d;
+            renderCountAndDiffButtons();
+        }
+
+        function setTrapFilter(val) {
+            selectedTrapFilter = val;
+            updateBlueprintPreview();
+        }
+
+        function setPipelineMode(mode) {
+            selectedPipelineMode = mode;
+            const proBtn = document.getElementById('pipe-pro');
+            const fastBtn = document.getElementById('pipe-fast');
+            if (mode === 'pro') {
+                proBtn.className = "py-2.5 px-2.5 rounded-xl text-xs font-extrabold bg-rose-500 text-white shadow-sm transition";
+                fastBtn.className = "py-2.5 px-2.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:border-pink-300 hover:bg-pink-50/50 transition";
+            } else {
+                fastBtn.className = "py-2.5 px-2.5 rounded-xl text-xs font-extrabold bg-rose-500 text-white shadow-sm transition";
+                proBtn.className = "py-2.5 px-2.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:border-pink-300 hover:bg-pink-50/50 transition";
             }
         }
-// ... existing code ...
-                        if (timedOut || err.name === 'AbortError') {
-                            lastErrDetail = `${attempt.label}: ${Math.round(timeoutMs / 1000)}초 응답 시간 초과`;
-                            appendLoadingLog(`⏱️ ${attempt.label} 시간 초과 → 다음 모델/재시도로 전환`);
-                            break;
-                        }
-// ... existing code ...
-            const BATCH_SIZE = 3;
-            const totalBatches = Math.ceil(count / BATCH_SIZE);
-            const collected = [];
-// ... existing code ...
-            clearApiConfirmArmed = false;
-            await persistApiCredentials('', 'gemini-3-flash-preview');
-            document.getElementById('api-key-input').value = '';
-// ... existing code ...
-        // 예기치 않은 런타임 오류 발생 시 무응답으로 멈추지 않고 토스트로 원인 표시
-        window.addEventListener('error', (e) => {
-            console.error('전역 스크립트 오류:', e.error || e.message);
+
+        function updateBlueprintPreview() {
+            const subLabel = selectedSubjects.length === ALL_SUBJECTS.length
+                ? "전 과목 (6대 과목)"
+                : selectedSubjects.map(s => SUBJECT_META[s].short).join(', ');
+            document.getElementById('bp-subjects').innerText = selectedTopic ? `${subLabel} · [${selectedTopic}]` : subLabel;
+            document.getElementById('bp-types').innerText = selectedQuestionTypes.join(' + ');
+            document.getElementById('bp-trap').innerText = `${selectedTrapFilter === 'ALL' ? '5대 함정 혼합' : selectedTrapFilter} · ${selectedDifficulty}`;
+            document.getElementById('bp-count').innerText = `${selectedQuestionCount}문항 (①~⑤ 균등 셔플)`;
+        }
+
+        // API 모달 열기/닫기
+        function openApiModal() {
+            document.getElementById('modal-api').classList.remove('hide');
+        }
+        function closeApiModal() {
+            document.getElementById('modal-api').classList.add('hide');
+        }
+        function saveApiPreviewOnly() {
+            closeApiModal();
+            showToast("설정 창 확인", "API 키 4중 영구저장 및 실시간 모델 연결은 2단계에서 탑재됩니다.", "⚙️");
+        }
+
+        // ============================================================
+        // 6. [1-3단계] 문항 출제(정답 균등 셔플) & CBT 시험 엔진
+        // ============================================================
+        function buildBalancedTargetAnswers(count) {
+            const arr = [];
+            for (let i = 0; i < count; i++) arr.push((i % 5) + 1);
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        function shuffleQuestionToAnswer(rawQ, desiredAns) {
+            const q = JSON.parse(JSON.stringify(rawQ));
+            const curIdx = Math.max(0, Math.min(4, (q.answer || 1) - 1));
+            const targetIdx = ((desiredAns || 1) - 1 + 5) % 5;
+            if (curIdx !== targetIdx) {
+                [q.options[curIdx], q.options[targetIdx]] = [q.options[targetIdx], q.options[curIdx]];
+                [q.optionExplanations[curIdx], q.optionExplanations[targetIdx]] = [q.optionExplanations[targetIdx], q.optionExplanations[curIdx]];
+                q.answer = targetIdx + 1;
+            }
+            return q;
+        }
+
+        function generateAndStartQuiz() {
+            const isOnlyCalc = selectedQuestionTypes.length === 1 && selectedQuestionTypes[0] === '계산형';
+            const effSubjects = isOnlyCalc ? ['생산운영관리'] : selectedSubjects;
+
+            let pool = questionBank.filter(q => effSubjects.includes(q.subject));
+            const byType = pool.filter(q => selectedQuestionTypes.includes(q.questionType));
+            if (byType.length > 0) pool = byType;
+
+            if (selectedTopic) {
+                const kw = selectedTopic.toLowerCase();
+                const byTopic = pool.filter(q => `${q.topic} ${q.question}`.toLowerCase().includes(kw));
+                if (byTopic.length > 0) pool = byTopic;
+            }
+            if (selectedTrapFilter !== 'ALL') {
+                const byTrap = pool.filter(q => q.trapPattern === selectedTrapFilter);
+                if (byTrap.length > 0) pool = byTrap;
+            }
+            if (pool.length === 0) pool = [...questionBank];
+
+            // 1-3단계에서는 검증 샘플 풀(최대 6문항) 내에서 중복 없이 깔끔하게 출제
+            const shuffledPool = [...pool].sort(() => Math.random() - 0.5);
+            const actualCount = Math.min(selectedQuestionCount, shuffledPool.length);
+            const targets = buildBalancedTargetAnswers(actualCount);
+            const quizList = shuffledPool.slice(0, actualCount).map((q, idx) => shuffleQuestionToAnswer(q, targets[idx]));
+
+            startQuizSession(quizList);
+            if (selectedQuestionCount > actualCount) {
+                showToast("검증 샘플 CBT 시작", `현재 1-3단계 샘플 풀(${actualCount}문항)로 시험을 시작합니다. 1-5단계에서 30문항으로 확장됩니다.`, "🚀");
+            } else {
+                showToast("모의고사 출제 완료", `${actualCount}문항(정답 ①~⑤ 균등 분산)으로 실전 CBT를 시작합니다.`, "🚀");
+            }
+        }
+
+        function startQuizSession(list) {
+            if (!list || list.length === 0) return;
+            currentQuizList = list;
+            currentQuizIndex = 0;
+            userAnswers = {};
+            flaggedSet = new Set();
+            eliminatedMap = {};
+            resultFilter = "ALL";
+
+            startTimer();
+            switchTab('quiz');
+            renderCurrentQuestion();
+            renderOMR();
+        }
+
+        // 타이머 제어
+        function startTimer() {
+            stopTimer();
+            timerSeconds = 0;
+            isTimerPaused = false;
+            document.getElementById('btn-timer-toggle').innerText = "일시정지";
+            document.getElementById('quiz-pause-overlay').classList.add('hide');
+            updateTimerDisplay();
+            timerInterval = setInterval(() => {
+                if (!isTimerPaused) {
+                    timerSeconds++;
+                    updateTimerDisplay();
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        function toggleTimerPause() {
+            isTimerPaused = !isTimerPaused;
+            document.getElementById('btn-timer-toggle').innerText = isTimerPaused ? "재개" : "일시정지";
+            document.getElementById('quiz-pause-overlay').classList.toggle('hide', !isTimerPaused);
+        }
+
+        function formatSeconds(sec) {
+            const m = String(Math.floor(sec / 60)).padStart(2, '0');
+            const s = String(sec % 60).padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        function updateTimerDisplay() {
+            document.getElementById('quiz-timer-display').innerText = `⏱️ ${formatSeconds(timerSeconds)}`;
+        }
+
+        // 현재 문항 렌더링
+        function renderCurrentQuestion() {
+            const q = currentQuizList[currentQuizIndex];
+            if (!q) return;
+
+            const total = currentQuizList.length;
+            document.getElementById('quiz-progress-text').innerText = `문항 ${currentQuizIndex + 1} / ${total}`;
+            document.getElementById('quiz-progress-bar').style.width = `${((currentQuizIndex + 1) / total) * 100}%`;
+
+            document.getElementById('quiz-subject-badge').innerText = `${q.subject} · ${q.topic}`;
+            document.getElementById('quiz-type-badge').innerText = q.questionType;
+            document.getElementById('quiz-trap-badge').innerText = `함정: ${q.trapPattern}`;
+
+            const flagBtn = document.getElementById('btn-flag-question');
+            const isFlagged = flaggedSet.has(currentQuizIndex);
+            flagBtn.innerText = isFlagged ? "★ 검토 표시됨" : "☆ 검토 표시";
+            flagBtn.className = isFlagged
+                ? "px-3 py-1.5 rounded-xl border border-amber-400 bg-amber-50 text-xs font-extrabold text-amber-700 transition"
+                : "px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-amber-50 hover:text-amber-700 transition";
+
+            document.getElementById('quiz-stem').innerText = `Q${currentQuizIndex + 1}. ${q.question}`;
+
+            const caseBox = document.getElementById('quiz-case-box');
+            if (q.caseBox && q.caseBox.trim()) {
+                caseBox.classList.remove('hide');
+                document.getElementById('quiz-case-text').innerText = q.caseBox;
+            } else {
+                caseBox.classList.add('hide');
+            }
+
+            const bogiBox = document.getElementById('quiz-bogi-box');
+            if (Array.isArray(q.bogi) && q.bogi.length > 0) {
+                bogiBox.classList.remove('hide');
+                document.getElementById('quiz-bogi-list').innerHTML = q.bogi.map(line => `<div>${escapeHtml(line)}</div>`).join('');
+            } else {
+                bogiBox.classList.add('hide');
+            }
+
+            const selectedAns = userAnswers[currentQuizIndex];
+            document.getElementById('quiz-options-list').innerHTML = q.options.map((opt, oIdx) => {
+                const optNum = oIdx + 1;
+                const isSel = selectedAns === optNum;
+                const elimKey = `${currentQuizIndex}_${oIdx}`;
+                const isElim = Boolean(eliminatedMap[elimKey]);
+                return `
+                    <div class="flex items-stretch gap-2">
+                        <button type="button" onclick="selectAnswer(${optNum})" class="flex-1 text-left p-3.5 sm:p-4 rounded-2xl border-2 transition flex items-start gap-2.5 ${isSel ? 'border-rose-400 bg-pink-50/70 text-slate-900 font-bold shadow-sm' : 'border-slate-200 bg-white hover:border-pink-200 text-slate-800'} ${isElim ? 'option-eliminated' : ''}">
+                            <span class="font-black text-sm shrink-0 ${isSel ? 'text-rose-600' : 'text-slate-400'}">${CIRCLED[oIdx]}</span>
+                            <span class="text-sm leading-relaxed">${escapeHtml(opt)}</span>
+                        </button>
+                        <button type="button" onclick="toggleEliminateOption(${oIdx})" title="확실한 오답 소거(취소선)" class="px-2.5 rounded-2xl border text-[11px] font-bold transition shrink-0 ${isElim ? 'border-rose-300 bg-rose-50 text-rose-600' : 'border-slate-200 bg-slate-50 text-slate-400 hover:text-slate-700'}">
+                            ${isElim ? '복원' : '소거'}
+                        </button>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('btn-prev-q').disabled = currentQuizIndex === 0;
+            document.getElementById('btn-prev-q').classList.toggle('opacity-40', currentQuizIndex === 0);
+            document.getElementById('btn-next-q').classList.toggle('hide', currentQuizIndex === total - 1);
+            renderOMR();
+        }
+
+        function selectAnswer(num) {
+            if (isTimerPaused) return;
+            userAnswers[currentQuizIndex] = num;
+            renderCurrentQuestion();
+        }
+
+        function toggleEliminateOption(oIdx) {
+            if (isTimerPaused) return;
+            const key = `${currentQuizIndex}_${oIdx}`;
+            eliminatedMap[key] = !eliminatedMap[key];
+            renderCurrentQuestion();
+        }
+
+        function toggleFlagCurrentQuestion() {
+            if (flaggedSet.has(currentQuizIndex)) flaggedSet.delete(currentQuizIndex);
+            else flaggedSet.add(currentQuizIndex);
+            renderCurrentQuestion();
+        }
+
+        function moveQuestion(delta) {
+            const next = currentQuizIndex + delta;
+            if (next < 0 || next >= currentQuizList.length) return;
+            currentQuizIndex = next;
+            renderCurrentQuestion();
+        }
+
+        function jumpToQuestion(idx) {
+            currentQuizIndex = idx;
+            renderCurrentQuestion();
+        }
+
+        function renderOMR() {
+            const grid = document.getElementById('omr-grid');
+            document.getElementById('omr-answered-count').innerText = Object.keys(userAnswers).length;
+            document.getElementById('omr-total-count').innerText = currentQuizList.length;
+            document.getElementById('omr-flagged-count').innerText = flaggedSet.size;
+
+            grid.innerHTML = currentQuizList.map((_, idx) => {
+                const isCur = idx === currentQuizIndex;
+                const ans = userAnswers[idx];
+                const isFlag = flaggedSet.has(idx);
+                let cls = "border-slate-200 bg-slate-50 text-slate-600";
+                if (isCur) cls = "border-rose-500 bg-rose-500 text-white shadow-sm";
+                else if (ans) cls = "border-pink-300 bg-pink-50 text-rose-700";
+                return `
+                    <button type="button" onclick="jumpToQuestion(${idx})" class="relative py-2 rounded-xl border-2 text-xs font-extrabold transition ${cls}">
+                        <div>${idx + 1}</div>
+                        <div class="text-[10px] font-bold opacity-85">${ans ? CIRCLED[ans - 1] : '-'}</div>
+                        ${isFlag ? '<span class="absolute -top-1 -right-1 text-[10px] text-amber-500">★</span>' : ''}
+                    </button>
+                `;
+            }).join('');
+        }
+
+        // 미응답 문항 확인 및 채점
+        function getUnansweredIndices() {
+            const missing = [];
+            for (let i = 0; i < currentQuizList.length; i++) {
+                if (!userAnswers[i]) missing.push(i);
+            }
+            return missing;
+        }
+
+        function requestSubmitQuiz() {
+            const missing = getUnansweredIndices();
+            if (missing.length > 0) {
+                document.getElementById('submit-confirm-desc').innerText = `총 ${currentQuizList.length}문항 중 ${missing.length}문항이 아직 미응답 상태입니다. 미응답 문항은 오답 처리됩니다.`;
+                document.getElementById('submit-unanswered-chips').innerHTML = missing.map(idx =>
+                    `<button type="button" onclick="closeSubmitConfirmModal(); jumpToQuestion(${idx})" class="px-2.5 py-1 rounded-lg bg-pink-50 hover:bg-pink-100 border border-pink-200 text-rose-700 text-xs font-extrabold">${idx + 1}번 이동</button>`
+                ).join('');
+                document.getElementById('modal-submit-confirm').classList.remove('hide');
+                return;
+            }
+            submitAndGradeQuiz();
+        }
+
+        function closeSubmitConfirmModal() {
+            document.getElementById('modal-submit-confirm').classList.add('hide');
+        }
+
+        function jumpToFirstUnanswered() {
+            const missing = getUnansweredIndices();
+            closeSubmitConfirmModal();
+            if (missing.length > 0) jumpToQuestion(missing[0]);
+        }
+
+        function confirmAndGradeQuiz() {
+            closeSubmitConfirmModal();
+            submitAndGradeQuiz();
+        }
+
+        function submitAndGradeQuiz() {
+            stopTimer();
+            let correctCount = 0;
+
+            currentQuizList.forEach((q, idx) => {
+                if (userAnswers[idx] === q.answer) {
+                    correctCount++;
+                } else {
+                    if (!wrongNotes.some(w => w.id === q.id)) {
+                        wrongNotes.unshift(JSON.parse(JSON.stringify(q)));
+                    }
+                }
+            });
+
+            const total = currentQuizList.length;
+            const score = Math.round((correctCount / Math.max(1, total)) * 100);
+
+            sessionStats.sessions++;
+            sessionStats.totalSolved += total;
+            sessionStats.totalCorrect += correctCount;
+            updateHeaderBadges();
+
+            document.getElementById('result-score-big').innerText = `${score}점`;
+            document.getElementById('result-correct-count').innerText = correctCount;
+            document.getElementById('result-total-count').innerText = total;
+            document.getElementById('result-time-spent').innerText = formatSeconds(timerSeconds);
+
+            switchTab('result');
+            setResultFilter('ALL');
+        }
+
+        function setResultFilter(filter) {
+            resultFilter = filter;
+            document.querySelectorAll('.rf-btn').forEach(btn => {
+                const active = btn.getAttribute('data-rf') === filter;
+                btn.className = active
+                    ? "rf-btn px-3.5 py-2 rounded-xl text-xs font-extrabold bg-rose-500 text-white"
+                    : "rf-btn px-3.5 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-700 hover:border-pink-200";
+            });
+            renderResultReviewList();
+        }
+
+        function renderResultReviewList() {
+            const container = document.getElementById('result-review-list');
+            const items = currentQuizList
+                .map((q, idx) => ({ q, idx, isCorrect: userAnswers[idx] === q.answer }))
+                .filter(x => resultFilter === 'ALL' || (resultFilter === 'WRONG' ? !x.isCorrect : x.isCorrect));
+
+            if (items.length === 0) {
+                container.innerHTML = `<div class="bg-white rounded-3xl p-10 text-center text-sm font-bold text-slate-500 border border-slate-200">선택한 조건에 해당하는 문항이 없습니다.</div>`;
+                return;
+            }
+
+            container.innerHTML = items.map(({ q, idx, isCorrect }) => {
+                const myAns = userAnswers[idx];
+                return `
+                    <div class="bg-white rounded-3xl p-5 sm:p-6 border-2 ${isCorrect ? 'border-emerald-200' : 'border-rose-200'} shadow-sm space-y-4">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <span class="px-2.5 py-1 rounded-lg text-xs font-black ${isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
+                                ${isCorrect ? '✅ 정답' : '❌ 오답'} (Q${idx + 1})
+                            </span>
+                            <span class="px-2.5 py-1 rounded-lg bg-pink-50 text-rose-600 border border-pink-200 text-xs font-bold">${escapeHtml(q.subject)} · ${escapeHtml(q.topic)}</span>
+                            <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">${escapeHtml(q.questionType)}</span>
+                        </div>
+
+                        <h3 class="text-sm sm:text-base font-bold text-slate-900 leading-relaxed">${escapeHtml(q.question)}</h3>
+
+                        ${q.caseBox ? `<div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed"><b>🏢 기업 사례:</b> ${escapeHtml(q.caseBox)}</div>` : ''}
+                        ${Array.isArray(q.bogi) && q.bogi.length > 0 ? `<div class="p-3.5 rounded-xl bg-slate-50 border border-slate-300 text-xs text-slate-800 space-y-1">${q.bogi.map(b => `<div>${escapeHtml(b)}</div>`).join('')}</div>` : ''}
+
+                        <!-- 5선지 개별 정오 해설 -->
+                        <div class="space-y-2">
+                            ${q.options.map((opt, oIdx) => {
+                                const num = oIdx + 1;
+                                const isAns = num === q.answer;
+                                const isMy = num === myAns;
+                                const exp = (q.optionExplanations && q.optionExplanations[oIdx]) || "";
+                                return `
+                                    <div class="p-3.5 rounded-2xl border text-xs space-y-1 ${isAns ? 'bg-emerald-50/70 border-emerald-300' : (isMy ? 'bg-rose-50/70 border-rose-300' : 'bg-slate-50/60 border-slate-200')}">
+                                        <div class="flex items-start justify-between gap-2 font-bold text-slate-900">
+                                            <span>${CIRCLED[oIdx]} ${escapeHtml(opt)}</span>
+                                            <span class="shrink-0 text-[10px] font-black ${isAns ? 'text-emerald-700' : (isMy ? 'text-rose-600' : 'text-slate-400')}">
+                                                ${isAns ? '정답' : (isMy ? '내 선택' : '')}
+                                            </span>
+                                        </div>
+                                        <div class="text-slate-600 leading-relaxed pl-4">${escapeHtml(exp)}</div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+
+                        <!-- 핵심 단권화 명제 -->
+                        <div class="p-4 rounded-2xl bg-pink-50/60 border border-pink-200 text-xs text-slate-900 space-y-2">
+                            <div>🎯 <b class="text-rose-700">핵심 단권화 명제:</b> ${escapeHtml(q.keyTakeaway)}</div>
+                            <div class="flex flex-wrap gap-1.5">
+                                ${(q.keyTerms || []).map(k => `<span class="px-2 py-0.5 rounded-full bg-white border border-pink-200 text-[10px] font-extrabold text-rose-600">#${escapeHtml(k)}</span>`).join('')}
+                            </div>
+                        </div>
+
+                        <!-- 4단 심층 해설 그리드 -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                            <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                                <div class="font-extrabold text-slate-900">📚 교과서급 심층 이론 배경</div>
+                                <div class="text-slate-700 leading-relaxed">${escapeHtml(q.deepTheoryNote)}</div>
+                            </div>
+                            <div class="p-4 rounded-2xl bg-sky-50/70 border border-sky-200 space-y-1">
+                                <div class="font-extrabold text-sky-900">⚖️ 유사 학자·개념 1:1 정밀 비교</div>
+                                <div class="text-sky-950 leading-relaxed">${escapeHtml(q.scholarCompareNote)}</div>
+                            </div>
+                            <div class="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-1">
+                                <div class="font-extrabold text-amber-900">🕵️ 출제 함정 해부</div>
+                                <div class="text-amber-950 leading-relaxed">${escapeHtml(q.trapAnatomy)}</div>
+                            </div>
+                            <div class="p-4 rounded-2xl bg-violet-50/70 border border-violet-200 space-y-1">
+                                <div class="font-extrabold text-violet-900">🔮 다음 시험 예상 변형 포인트</div>
+                                <div class="text-violet-950 leading-relaxed">${escapeHtml(q.examExtensionTip)}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function retryWrongFromCurrentQuiz() {
+            const wrongs = currentQuizList.filter((q, idx) => userAnswers[idx] !== q.answer);
+            if (wrongs.length === 0) {
+                showToast("만점입니다!", "틀린 문항이 없어 재응시할 오답이 없습니다.", "🎉");
+                return;
+            }
+            const targets = buildBalancedTargetAnswers(wrongs.length);
+            const ready = wrongs.map((q, i) => shuffleQuestionToAnswer(q, targets[i]));
+            startQuizSession(ready);
+        }
+
+        // ============================================================
+        // 7. 보조 탭(통계 요약 · 문제은행 · 오답노트) 렌더링
+        // ============================================================
+        function renderAnalyticsSummary() {
+            const acc = sessionStats.totalSolved > 0
+                ? `${Math.round((sessionStats.totalCorrect / sessionStats.totalSolved) * 100)}%`
+                : "-";
+            document.getElementById('analytics-summary-grid').innerHTML = `
+                <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                    <div class="text-[11px] font-bold text-slate-500">누적 응시 회차</div>
+                    <div class="text-2xl font-black text-slate-900 mt-1">${sessionStats.sessions}회</div>
+                </div>
+                <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                    <div class="text-[11px] font-bold text-slate-500">총 풀이 문항</div>
+                    <div class="text-2xl font-black text-rose-600 mt-1">${sessionStats.totalSolved}문항</div>
+                </div>
+                <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                    <div class="text-[11px] font-bold text-slate-500">평균 정답률</div>
+                    <div class="text-2xl font-black text-emerald-600 mt-1">${acc}</div>
+                </div>
+            `;
+        }
+
+        function renderBankList() {
+            document.getElementById('bank-list').innerHTML = questionBank.map(q => `
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-2.5">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="px-2.5 py-1 rounded-lg bg-pink-50 text-rose-600 border border-pink-200 text-xs font-extrabold">${escapeHtml(q.subject)}</span>
+                        <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">${escapeHtml(q.topic)}</span>
+                        <span class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold">${escapeHtml(q.questionType)}</span>
+                    </div>
+                    <div class="text-sm font-bold text-slate-900 leading-relaxed">${escapeHtml(q.question)}</div>
+                    <div class="p-3.5 rounded-2xl bg-slate-50 text-xs text-slate-700 space-y-1">
+                        <div><b class="text-rose-600">정답 ${CIRCLED[q.answer - 1]}:</b> ${escapeHtml(q.options[q.answer - 1] || '')}</div>
+                        <div class="text-slate-600"><b>🎯 핵심:</b> ${escapeHtml(q.keyTakeaway)}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function startBankAllExam() {
+            const targets = buildBalancedTargetAnswers(questionBank.length);
+            const ready = questionBank.map((q, i) => shuffleQuestionToAnswer(q, targets[i]));
+            startQuizSession(ready);
+        }
+
+        function renderWrongList() {
+            document.getElementById('wrong-count-label').innerText = `${wrongNotes.length}문항`;
+            const container = document.getElementById('wrong-list');
+            if (wrongNotes.length === 0) {
+                container.innerHTML = `<div class="bg-white rounded-3xl p-10 text-center text-sm font-bold text-slate-500 border border-slate-200">저장된 오답이 없습니다. 시험을 풀고 틀린 문항이 생기면 이곳에 자동 기록됩니다.</div>`;
+                return;
+            }
+            container.innerHTML = wrongNotes.map(q => `
+                <div class="bg-white rounded-3xl p-5 border border-rose-200 shadow-sm space-y-2.5">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 text-xs font-extrabold">${escapeHtml(q.subject)} · ${escapeHtml(q.topic)}</span>
+                        <button type="button" onclick="removeWrongNote('${q.id}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 text-[11px] font-bold transition">✓ 완벽 이해(제거)</button>
+                    </div>
+                    <div class="text-sm font-bold text-slate-900">${escapeHtml(q.question)}</div>
+                    <div class="p-3.5 rounded-2xl bg-pink-50/40 text-xs text-slate-700 space-y-1">
+                        <div><b class="text-rose-700">정답 ${CIRCLED[q.answer - 1]}:</b> ${escapeHtml(q.options[q.answer - 1] || '')}</div>
+                        <div><b>🎯 단권화 핵심:</b> ${escapeHtml(q.keyTakeaway)}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function removeWrongNote(id) {
+            wrongNotes = wrongNotes.filter(q => q.id !== id);
+            updateHeaderBadges();
+            renderWrongList();
+            showToast("오답 제거 완료", "해당 문항을 오답노트에서 졸업 처리했습니다.", "🎓");
+        }
+
+        function startWrongNoteExam() {
+            if (wrongNotes.length === 0) {
+                showToast("오답노트 비어있음", "다시 풀 오답 문항이 없습니다.", "⚠️");
+                return;
+            }
+            const targets = buildBalancedTargetAnswers(wrongNotes.length);
+            const ready = wrongNotes.map((q, i) => shuffleQuestionToAnswer(q, targets[i]));
+            startQuizSession(ready);
+        }
+
+        // 시험장 키보드 단축키 (1~5 답안 선택, 좌우 화살표 이동)
+        document.addEventListener('keydown', (e) => {
+            const quizTab = document.getElementById('tab-quiz');
+            if (!quizTab || quizTab.classList.contains('hide') || isTimerPaused) return;
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+
+            if (e.key >= '1' && e.key <= '5') selectAnswer(parseInt(e.key));
+            else if (e.key === 'ArrowRight') moveQuestion(1);
+            else if (e.key === 'ArrowLeft') moveQuestion(-1);
+        });
+
+        // ============================================================
+        // 8. 안전한 앱 초기화
+        // ============================================================
+        function initApp() {
             try {
-                showToast("실행 오류 감지", String(e.message || '알 수 없는 오류').slice(0, 120), "⚠️");
-            } catch (_) {}
-        });
-        window.addEventListener('unhandledrejection', (e) => {
-            console.error('비동기 처리 오류:', e.reason);
-        });
+                renderSubjectCards();
+                renderTypeCards();
+                renderCountAndDiffButtons();
+                setPipelineMode('pro');
+                updateHeaderBadges();
+            } catch (err) {
+                console.error("초기화 오류:", err);
+                showToast("초기화 오류", String(err.message || err), "⚠️");
+            }
+        }
 
         if (document.readyState === 'loading') {
-            window.addEventListener('DOMContentLoaded', initApp);
+            document.addEventListener('DOMContentLoaded', initApp);
         } else {
             initApp();
         }
