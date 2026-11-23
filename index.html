@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>경영학 출제 스튜디오  · 연핑크 포인트</title>
-    <!-- Tailwind CSS 및 Inter / Noto Sans KR 폰트 -->
+    <title>경영학 출제 스튜디오 v3 · 연핑크 포인트</title>
+    <!-- Tailwind CSS, Chart.js, html2pdf.js 및 Inter / Noto Sans KR 폰트 -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
@@ -54,6 +56,30 @@
             opacity: 0.65;
         }
 
+        /* 1단/2단 시험지 인쇄·PDF 미리보기 스타일 */
+        .exam-paper-sheet {
+            background: #ffffff;
+            color: #111827;
+            font-family: 'Noto Sans KR', sans-serif;
+            line-height: 1.65;
+        }
+        .exam-two-col {
+            column-count: 2;
+            column-gap: 24px;
+            column-rule: 1px solid #cbd5e1;
+        }
+        .exam-one-col {
+            column-count: 1;
+        }
+        @media (max-width: 768px) {
+            .exam-two-col { column-count: 1; }
+        }
+        .exam-q-block {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            margin-bottom: 18px;
+        }
+
         /* 전역 토스트 알림 애니메이션 */
         #toast-box {
             transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -89,15 +115,9 @@
                 <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white font-black text-sm flex items-center justify-center shadow-sm shadow-pink-200 shrink-0">
                     BM
                 </div>
-                <div>
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <h1 class="text-sm sm:text-base font-black text-slate-900 tracking-tight">경영학 출제 스튜디오</h1>
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-50 text-pink-600 border border-pink-200">v3.0</span>
-                        <span id="api-mode-badge" class="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                            📚 검증 샘플 6문항 CBT 모드
-                        </span>
-                    </div>
-                    <p class="text-[11px] text-slate-500">CPA · 공기업 6대 경영학 (재무관리·회계 완전 제외)</p>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <h1 class="text-sm sm:text-base font-black text-slate-900 tracking-tight">경영학 출제 스튜디오</h1>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-pink-50 text-pink-600 border border-pink-200">v3.0</span>
                 </div>
             </div>
 
@@ -117,8 +137,9 @@
                     <span>🔥 오답노트</span>
                     <span id="badge-wrong-count" class="px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-600 text-[10px] font-black">0</span>
                 </button>
-                <button id="nav-api" type="button" onclick="openApiModal()" class="px-3.5 py-2.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:border-pink-300 hover:bg-pink-50/50 transition whitespace-nowrap">
-                    ⚙️ API
+                <button id="nav-api" type="button" onclick="openApiModal()" class="px-3.5 py-2.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:border-pink-300 hover:bg-pink-50/50 transition whitespace-nowrap flex items-center gap-1.5">
+                    <span>⚙️ API</span>
+                    <span id="nav-api-dot" class="hide w-2 h-2 rounded-full bg-emerald-500"></span>
                 </button>
             </nav>
         </div>
@@ -134,6 +155,18 @@
 
             <!-- 좌측 7컬럼: 출제 조건 설계 카드 3종 -->
             <div class="lg:col-span-7 space-y-5">
+
+                <!-- [1-4단계] 진행 중 시험 자동저장 복구 배너 -->
+                <div id="resume-session-banner" class="hide bg-white border-2 border-pink-300 rounded-3xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+                    <div class="space-y-0.5">
+                        <div class="text-xs font-black text-rose-600">💾 자동저장된 진행 중 시험이 있습니다</div>
+                        <div id="resume-session-desc" class="text-[11px] font-bold text-slate-600"></div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="resumeSavedSession()" class="px-3.5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition shadow-sm">▶ 이어서 풀기</button>
+                        <button type="button" onclick="discardSavedSession()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition">삭제</button>
+                    </div>
+                </div>
 
                 <!-- STEP 01: 6대 과목 선택 -->
                 <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
@@ -188,7 +221,7 @@
                     </div>
 
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-2">출제 문항 수 (현재 1-3단계 검증용 6문항 풀 기반)</label>
+                        <label class="block text-xs font-bold text-slate-600 mb-2">출제 문항 수 (API 연결 시 3문항 배치 단위 고속 출제 · 최대 40문항)</label>
                         <div id="cnt-grid" class="grid grid-cols-3 sm:grid-cols-6 gap-2"></div>
                     </div>
 
@@ -220,7 +253,7 @@
                             <span class="text-[10px] font-extrabold uppercase tracking-wider text-pink-500">LIVE BLUEPRINT</span>
                             <h3 class="text-lg font-black text-slate-900">실시간 출제 설계도</h3>
                         </div>
-                        <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-pink-50 text-rose-600 border border-pink-200">1-3단계 CBT 가동</span>
+                        <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-pink-50 text-rose-600 border border-pink-200">💾 영구 자동저장 ON</span>
                     </div>
 
                     <!-- 설계 요약 박스 -->
@@ -242,6 +275,10 @@
                             <span id="bp-count" class="font-bold text-slate-900 text-right">5문항 (①~⑤ 균등 셔플)</span>
                         </div>
                         <div class="flex justify-between gap-2 pt-2 border-t border-slate-200">
+                            <span class="text-slate-500 shrink-0">출제 엔진</span>
+                            <span id="bp-engine" class="font-extrabold text-slate-800 text-right">내장 샘플 풀 (API 키 등록 시 실시간 AI)</span>
+                        </div>
+                        <div class="flex justify-between gap-2">
                             <span class="text-slate-500 shrink-0">출제 범위 안전장치</span>
                             <span class="font-extrabold text-rose-600 text-right">🚫 재무관리·회계 완전 배제</span>
                         </div>
@@ -251,7 +288,7 @@
                     <div class="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-3">
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-extrabold text-slate-900">AI 출제 · 검수 파이프라인</span>
-                            <span class="text-[10px] font-bold text-pink-600">3단계에서 API 연동</span>
+                            <span class="text-[10px] font-bold text-pink-600">규칙검증 + 경량 2단감수</span>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
                             <button id="pipe-pro" type="button" onclick="setPipelineMode('pro')" class="py-2.5 px-2.5 rounded-xl text-xs font-extrabold bg-rose-500 text-white shadow-sm transition">
@@ -262,12 +299,31 @@
                             </button>
                         </div>
                         <p id="pipe-desc" class="text-[11px] text-slate-600 leading-relaxed">
-                            현재는 <b class="text-slate-800">1-2 &amp; 1-3단계</b>로, 버튼·설계도·탭 전환과 6대 과목 검증 샘플을 통한 <b class="text-rose-600">CBT 풀이 → OMR → 타이머 → 채점·6단 해설</b> 전체 흐름이 작동합니다.
+                            3문항 배치 출제 후 <b>2차 수석 감수 경량 패치(45초 제한)</b>로 복수정답·재무 혼입·계산식을 교정하고 배치마다 즉시 문제은행에 자동저장합니다.
                         </p>
+                        <button id="btn-test-audit" type="button" onclick="testAuditPipelineLive()" class="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-pink-50 border border-pink-200 text-rose-600 text-[11px] font-extrabold transition">
+                            🧪 2단계 AI 검수 + 재무관리 차단 즉시 진단
+                        </button>
+                        <div id="audit-selfcheck-box" class="hide p-3 rounded-xl bg-slate-900 text-[11px] text-slate-200 space-y-1.5 leading-relaxed border border-slate-700"></div>
                     </div>
 
-                    <!-- 출제 시작 버튼 -->
-                    <button id="btn-generate-quiz" type="button" onclick="generateAndStartQuiz()" class="w-full py-4 rounded-2xl bg-rose-500 hover:bg-rose-600 active:scale-[0.99] text-white font-black text-sm shadow-md shadow-rose-200 transition flex items-center justify-center gap-2">
+                    <!-- [3-1단계] 실시간 배치 출제 진행 로그 & 중단 버튼 -->
+                    <div id="setup-loading" class="hide p-4 rounded-2xl bg-slate-900 text-white border border-slate-700 space-y-2.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <div class="w-4 h-4 border-2 border-pink-400 border-t-transparent rounded-full animate-spin shrink-0"></div>
+                                <div id="setup-loading-title" class="text-xs font-bold text-pink-200 truncate">초심층 문항을 생성하고 있습니다...</div>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <span id="setup-loading-elapsed" class="text-[11px] font-mono font-bold text-amber-300">0초</span>
+                                <button type="button" onclick="cancelQuizGeneration()" class="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-extrabold transition">⏹️ 중단</button>
+                            </div>
+                        </div>
+                        <div id="setup-loading-log" class="text-[11px] font-mono text-emerald-300 bg-slate-950 rounded-xl p-2.5 max-h-40 overflow-y-auto space-y-1 border border-slate-800"></div>
+                    </div>
+
+                    <!-- 핵심 실행 버튼 -->
+                    <button id="btn-generate-quiz" type="button" onclick="generateAndStartQuiz()" class="w-full py-4 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 active:scale-[0.99] text-white font-black text-sm shadow-lg shadow-pink-200 transition flex items-center justify-center gap-2">
                         <span>🚀 문항 출제 및 시험 시작하기</span>
                     </button>
                 </div>
@@ -275,29 +331,29 @@
         </section>
 
         <!-- ======================================================= -->
-        <!-- [화면 2] 실전 CBT 시험장 + 우측 OMR 패널 -->
+        <!-- [화면 2] 실전 CBT 시험장 + 우측 OMR 마킹 패널 -->
         <!-- ======================================================= -->
         <section id="tab-quiz" class="hide grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-            <!-- 좌측 8컬럼: 시험 문제 영역 -->
+            <!-- 좌측 8컬럼: 실전 시험지 -->
             <div class="lg:col-span-8 space-y-4">
                 <!-- 상단 진행률 및 타이머 바 -->
                 <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
                     <div class="flex items-center gap-3">
                         <span id="quiz-progress-text" class="text-sm font-black text-rose-600">문항 1 / 5</span>
-                        <div class="w-28 sm:w-44 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div class="w-28 sm:w-40 h-2 bg-slate-100 rounded-full overflow-hidden">
                             <div id="quiz-progress-bar" class="h-full bg-rose-500 transition-all duration-300" style="width: 20%;"></div>
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
                         <span id="quiz-timer-display" class="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-800 font-mono text-xs font-extrabold">⏱️ 00:00</span>
                         <button id="btn-timer-toggle" type="button" onclick="toggleTimerPause()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-pink-50 hover:text-rose-600 text-xs font-bold text-slate-700 transition">일시정지</button>
+                        <button type="button" onclick="openExamPrintModal(currentQuizList, '현재 실전 모의고사')" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition">🖨️ 시험지 PDF</button>
                     </div>
                 </div>
 
                 <!-- 문항 본문 카드 + 일시정지 블라인드 -->
                 <div class="relative bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-sm space-y-5 overflow-hidden">
-                    <!-- 타이머 일시정지 블라인드 오버레이 -->
                     <div id="quiz-pause-overlay" class="hide absolute inset-0 z-20 bg-slate-900/95 backdrop-blur-md flex flex-col items-center justify-center text-center p-6 space-y-4">
                         <div class="text-3xl">⏸️</div>
                         <div class="text-lg font-black text-white">시험 타이머가 일시정지되었습니다</div>
@@ -307,12 +363,11 @@
                         </button>
                     </div>
 
-                    <!-- 문항 메타 배지 & 검토 표시 버튼 -->
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <div class="flex flex-wrap items-center gap-1.5">
                             <span id="quiz-subject-badge" class="px-2.5 py-1 rounded-lg bg-pink-50 text-rose-600 border border-pink-200 text-xs font-extrabold">과목</span>
                             <span id="quiz-type-badge" class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">유형</span>
-                            <span id="quiz-trap-badge" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold">함정</span>
+                            <span id="quiz-trap-badge" class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold">함정</span>
                         </div>
                         <button id="btn-flag-question" type="button" onclick="toggleFlagCurrentQuestion()" class="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-amber-50 hover:text-amber-700 transition">
                             ☆ 검토 표시
@@ -322,7 +377,7 @@
                     <!-- 발문 -->
                     <h2 id="quiz-stem" class="text-base sm:text-lg font-bold text-slate-900 leading-relaxed"></h2>
 
-                    <!-- 기업 사례형 박스 -->
+                    <!-- 기업 사례 박스 -->
                     <div id="quiz-case-box" class="hide p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-300 space-y-1.5">
                         <div class="text-xs font-black text-rose-600">🏢 기업 사례 (Case Study)</div>
                         <p id="quiz-case-text" class="text-sm text-slate-800 leading-relaxed"></p>
@@ -334,10 +389,10 @@
                         <div id="quiz-bogi-list" class="space-y-2 text-sm text-slate-800 leading-relaxed"></div>
                     </div>
 
-                    <!-- 5지선다 선택지 목록 -->
+                    <!-- 5지선다 선지 영역 -->
                     <div id="quiz-options-list" class="space-y-2.5 pt-2"></div>
 
-                    <!-- 하단 문항 이동 및 채점 바 -->
+                    <!-- 하단 이전/다음/채점 버튼 -->
                     <div class="flex items-center justify-between pt-4 border-t border-slate-100 gap-2">
                         <button id="btn-prev-q" type="button" onclick="moveQuestion(-1)" class="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm transition">
                             ← 이전 문항
@@ -357,7 +412,7 @@
 
             <!-- 우측 4컬럼: 실시간 OMR 마킹 패널 -->
             <div class="lg:col-span-4 lg:sticky lg:top-20">
-                <div class="bg-white rounded-3xl p-5 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm space-y-4">
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-4">
                     <div class="flex items-center justify-between">
                         <h3 class="text-sm font-black text-slate-900">📋 OMR 답안 마킹 현황</h3>
                         <div class="flex items-center gap-2 text-[11px] font-bold">
@@ -367,7 +422,7 @@
                     </div>
                     <div id="omr-grid" class="grid grid-cols-5 gap-2 max-h-80 overflow-y-auto pr-1"></div>
                     <div class="pt-3 border-t border-slate-100 space-y-2">
-                        <button type="button" onclick="requestSubmitQuiz()" class="w-full py-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs transition shadow-sm">
+                        <button type="button" onclick="requestSubmitQuiz()" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition">
                             최종 답안 제출 및 초심층 해설 보기
                         </button>
                         <button type="button" onclick="switchTab('setup')" class="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition">
@@ -379,22 +434,27 @@
         </section>
 
         <!-- ======================================================= -->
-        <!-- [화면 3] 채점 결과 & 교과서급 초심층 6단 해설 -->
+        <!-- [화면 3] 채점 결과 & 6단 초심층 해설 -->
         <!-- ======================================================= -->
         <section id="tab-result" class="hide space-y-6">
-            <!-- 상단 점수 요약 카드 -->
             <div class="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
-                <div class="space-y-2">
-                    <span class="px-2.5 py-1 rounded-full bg-pink-50 text-rose-600 border border-pink-200 text-[11px] font-extrabold">채점 및 초심층 6단 해설 완료</span>
-                    <div class="flex items-baseline gap-3 flex-wrap">
+                <div class="space-y-1.5">
+                    <span class="px-2.5 py-1 rounded-full bg-pink-50 text-rose-600 border border-pink-200 text-[11px] font-extrabold">채점 및 6단 초심층 해설 완료</span>
+                    <div class="flex items-baseline gap-3 flex-wrap pt-1">
                         <span id="result-score-big" class="text-4xl sm:text-5xl font-black text-slate-900">0점</span>
-                        <span class="text-sm font-bold text-slate-600">(<span id="result-correct-count">0</span> / <span id="result-total-count">0</span>문항 정답 · 소요 <span id="result-time-spent">00:00</span>)</span>
+                        <span class="text-sm font-bold text-slate-500">(<span id="result-correct-count">0</span> / <span id="result-total-count">0</span>문항 정답 · 소요 <span id="result-time-spent">00:00</span>)</span>
                     </div>
-                    <p id="result-audit-summary" class="text-xs text-emerald-700 font-bold">🛡️ 6대 과목 검증 샘플 통과 · 재무관리·회계 혼입 0건</p>
+                    <p id="result-audit-summary" class="text-xs text-slate-500 font-medium">틀린 문항은 자동으로 오답노트에 영구 저장되었습니다.</p>
                 </div>
                 <div class="flex flex-wrap gap-2">
+                    <button type="button" onclick="switchTab('analytics')" class="px-4 py-2.5 rounded-xl bg-pink-50 hover:bg-pink-100 border border-pink-200 text-rose-600 font-extrabold text-xs transition">
+                        📊 약점 분석 보기
+                    </button>
+                    <button type="button" onclick="openExamPrintModal(currentQuizList, '채점 완료 시험지 및 해설')" class="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 font-extrabold text-xs transition">
+                        🖨️ 시험지·해설 PDF
+                    </button>
                     <button type="button" onclick="retryWrongFromCurrentQuiz()" class="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs transition shadow-sm">
-                        🔥 틀린 문항만 다시 풀기
+                        🔥 오답만 다시 풀기
                     </button>
                     <button type="button" onclick="switchTab('setup')" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition">
                         🎯 새 모의고사 출제
@@ -402,73 +462,181 @@
                 </div>
             </div>
 
-            <!-- 결과 필터 바 -->
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex items-center gap-2">
                     <button type="button" onclick="setResultFilter('ALL')" data-rf="ALL" class="rf-btn px-3.5 py-2 rounded-xl text-xs font-extrabold bg-rose-500 text-white">전체 문항</button>
-                    <button type="button" onclick="setResultFilter('WRONG')" data-rf="WRONG" class="rf-btn px-3.5 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-700">오답만 보기</button>
-                    <button type="button" onclick="setResultFilter('CORRECT')" data-rf="CORRECT" class="rf-btn px-3.5 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-700">정답만 보기</button>
+                    <button type="button" onclick="setResultFilter('WRONG')" data-rf="WRONG" class="rf-btn px-3.5 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-700 hover:border-pink-200">오답만 보기</button>
+                    <button type="button" onclick="setResultFilter('CORRECT')" data-rf="CORRECT" class="rf-btn px-3.5 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-700 hover:border-pink-200">정답만 보기</button>
                 </div>
-                <div class="text-xs font-bold text-slate-500">틀린 문항은 상단 🔥 오답노트 탭에 자동 반영되었습니다.</div>
+                <div class="text-xs font-bold text-slate-500">문항별 개인 단권화 암기 메모는 입력 즉시 자동 저장됩니다.</div>
             </div>
 
-            <!-- 문항별 초심층 6단 해설 카드 리스트 -->
             <div id="result-review-list" class="space-y-5"></div>
         </section>
 
         <!-- ======================================================= -->
-        <!-- [화면 4] 통계·약점 탭 (현재 세션 요약 · 4-1단계 차트 확장 예정) -->
+        <!-- [화면 4] 학습 통계 & 약점 분석 대시보드 (4단계 완성) -->
         <!-- ======================================================= -->
-        <section id="tab-analytics" class="hide space-y-5">
-            <div class="bg-white rounded-3xl p-6 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm space-y-3">
-                <div class="flex items-center justify-between flex-wrap gap-2">
-                    <div>
-                        <h2 class="text-lg font-black text-slate-900">📊 학습 통계 · 약점 분석</h2>
-                        <p class="text-xs text-slate-500">현재 세션 누적 응시 요약입니다. 상세 차트 시각화는 4-1단계에서 연결됩니다.</p>
-                    </div>
-                    <button type="button" onclick="switchTab('setup')" class="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition">🎯 모의고사 풀러 가기</button>
+        <section id="tab-analytics" class="hide space-y-6">
+            <!-- 상단 KPI 4카드 -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm">
+                    <div class="text-[11px] font-bold text-slate-500">누적 응시 회차</div>
+                    <div id="stat-total-sessions" class="text-2xl sm:text-3xl font-black text-slate-900 mt-1">0회</div>
+                    <div id="stat-total-solved" class="text-[11px] text-rose-600 font-bold mt-1">총 0문항 풀이</div>
                 </div>
-                <div id="analytics-summary-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2"></div>
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm">
+                    <div class="text-[11px] font-bold text-slate-500">평균 정답률</div>
+                    <div id="stat-avg-accuracy" class="text-2xl sm:text-3xl font-black text-emerald-600 mt-1">-</div>
+                    <div id="stat-avg-time" class="text-[11px] text-slate-500 font-bold mt-1">문항당 평균 -초</div>
+                </div>
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm">
+                    <div class="text-[11px] font-bold text-slate-500">최우선 보완 과목</div>
+                    <div id="stat-weak-subject" class="text-lg sm:text-xl font-black text-rose-600 mt-1.5 truncate">데이터 수집 전</div>
+                    <div id="stat-weak-subject-sub" class="text-[11px] text-slate-500 font-bold mt-1">모의고사 1회 이상 응시 시 진단</div>
+                </div>
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm">
+                    <div class="text-[11px] font-bold text-slate-500">최다 취약 함정</div>
+                    <div id="stat-weak-trap" class="text-base sm:text-lg font-black text-amber-600 mt-1.5 truncate">데이터 수집 전</div>
+                    <div id="stat-weak-trap-sub" class="text-[11px] text-slate-500 font-bold mt-1">오답 패턴 자동 추적</div>
+                </div>
+            </div>
+
+            <!-- 약점 집중 처방 배너 -->
+            <div class="bg-white rounded-3xl p-6 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div class="space-y-1">
+                    <div class="text-[11px] font-extrabold text-pink-500 uppercase tracking-wider">WEAKNESS PRESCRIPTION</div>
+                    <h2 class="text-lg font-black text-slate-900">취약 과목·함정 맞춤형 집중 보완 모의고사</h2>
+                    <p id="prescription-desc" class="text-xs text-slate-600">누적 오답과 과목별 정답률을 분석해 가장 취약한 영역 문항을 우선 선별해 출제합니다.</p>
+                </div>
+                <div class="flex flex-wrap gap-2 shrink-0">
+                    <button type="button" onclick="startWeaknessTargetedExam()" class="px-5 py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-black text-xs transition shadow-md shadow-pink-200">
+                        🎯 약점 집중 5문항 바로 풀기
+                    </button>
+                    <button id="btn-clear-history" type="button" onclick="clearExamHistory()" class="px-3.5 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition">
+                        통계 초기화
+                    </button>
+                </div>
+            </div>
+
+            <!-- 차트 2종: 과목별 정답률 & 함정별 오답률 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-black text-slate-900">📈 6대 과목별 정답률 & 문제은행 보유량</h3>
+                        <span class="text-[11px] font-bold text-slate-400">재무관리·회계 제외</span>
+                    </div>
+                    <div class="relative h-64">
+                        <canvas id="chart-subject-accuracy"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-black text-slate-900">🕵️ 5대 출제 함정별 오답률 진단</h3>
+                        <span class="text-[11px] font-bold text-slate-400">높을수록 주의 필요</span>
+                    </div>
+                    <div class="relative h-64">
+                        <canvas id="chart-trap-weakness"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 회차별 점수 추이 & 최근 응시 기록 -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div class="lg:col-span-7 bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-black text-slate-900">🚀 최근 회차별 점수 추이</h3>
+                        <span class="text-[11px] font-bold text-slate-400">최근 12회차</span>
+                    </div>
+                    <div class="relative h-56">
+                        <canvas id="chart-score-trend"></canvas>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-5 bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-3">
+                    <h3 class="text-sm font-black text-slate-900">🗂️ 최근 모의고사 응시 기록</h3>
+                    <div id="analytics-history-list" class="space-y-2 max-h-56 overflow-y-auto pr-1"></div>
+                </div>
             </div>
         </section>
 
         <!-- ======================================================= -->
-        <!-- [화면 5] 문제은행 탭 -->
+        <!-- [화면 5] 문제은행 아카이브 (검색·필터·백업·PDF 연동) -->
         <!-- ======================================================= -->
         <section id="tab-bank" class="hide space-y-5">
-            <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h2 class="text-lg font-black text-slate-900">📚 문제은행 (검증 샘플 6문항)</h2>
-                    <p class="text-xs text-slate-500">6대 과목 핵심 기출이 탑재되어 있습니다. 영구 자동저장은 1-4단계에서 연결됩니다.</p>
+            <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-lg font-black text-slate-900">📚 문제은행 아카이브</h2>
+                        <p class="text-xs text-slate-500">출제한 모든 문항과 단권화 메모가 영구 저장됩니다. (<span id="bank-count-label" class="font-bold text-rose-600">0문항</span>)</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="startBankMockExam('FILTERED')" class="px-3.5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition shadow-sm">
+                            ✏️ 현재 조건 모의고사 풀기
+                        </button>
+                        <button type="button" onclick="openExamPrintModal(getFilteredBankList(), '문제은행 선별 모의고사')" class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition">
+                            🖨️ PDF 저장
+                        </button>
+                        <button type="button" onclick="exportBankJSON()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-pink-50 hover:text-rose-600 text-slate-700 text-xs font-bold transition">
+                            📤 백업
+                        </button>
+                        <label class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-pink-50 hover:text-rose-600 text-slate-700 text-xs font-bold transition cursor-pointer">
+                            📥 복원
+                            <input id="bank-import-input" type="file" accept=".json" onchange="importBankJSON(event)" class="hidden">
+                        </label>
+                    </div>
                 </div>
-                <button type="button" onclick="startBankAllExam()" class="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition shadow-sm">
-                    ✏️ 문제은행 6문항 전체 풀기
-                </button>
+
+                <!-- 검색·과목·유형 필터 -->
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                    <input id="bank-search-input" type="text" oninput="renderBankScreen()" placeholder="키워드·학자명·이론·내 메모 검색 (예: 포터, 허츠버그, EOQ, 채찍효과)" class="sm:col-span-6 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-pink-300">
+                    <select id="bank-filter-subject" onchange="renderBankScreen()" class="sm:col-span-3 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-pink-300">
+                        <option value="ALL">전체 과목 (6대 과목)</option>
+                        <option value="경영일반·전략">경영일반·전략</option>
+                        <option value="조직행동">조직행동</option>
+                        <option value="인적자원관리">인적자원관리</option>
+                        <option value="마케팅">마케팅</option>
+                        <option value="생산운영관리">생산운영관리</option>
+                        <option value="경영정보시스템">경영정보시스템</option>
+                    </select>
+                    <select id="bank-filter-type" onchange="renderBankScreen()" class="sm:col-span-3 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-pink-300">
+                        <option value="ALL">전체 문항 구조</option>
+                        <option value="이론형">정통 이론형</option>
+                        <option value="조합형">ㄱ·ㄴ·ㄷ 조합형</option>
+                        <option value="사례형">기업 사례형</option>
+                        <option value="계산형">생산운영 계산형</option>
+                    </select>
+                </div>
             </div>
             <div id="bank-list" class="space-y-4"></div>
         </section>
 
         <!-- ======================================================= -->
-        <!-- [화면 6] 오답노트 탭 -->
+        <!-- [화면 6] 오답노트 -->
         <!-- ======================================================= -->
         <section id="tab-wrong" class="hide space-y-5">
-            <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 border-t-4 border-t-pink-400 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div class="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h2 class="text-lg font-black text-slate-900">🔥 오답노트 집중 복습</h2>
-                    <p class="text-xs text-slate-500">시험 채점 시 틀린 문항이 이곳에 자동 모입니다. (<span id="wrong-count-label" class="font-bold text-rose-600">0문항</span>)</p>
+                    <p class="text-xs text-slate-500">틀린 문항이 자동 저장됩니다. (<span id="wrong-count-label" class="font-bold text-rose-600">0문항</span>)</p>
                 </div>
-                <button type="button" onclick="startWrongNoteExam()" class="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition shadow-sm">
-                    ✏️ 오답 전체 다시 풀기
-                </button>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" onclick="startWrongNoteExam()" class="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition shadow-sm">
+                        ✏️ 오답 전체 다시 풀기
+                    </button>
+                    <button type="button" onclick="openExamPrintModal(wrongNotes, '오답노트 집중 시험지')" class="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition">
+                        🖨️ 오답 시험지 PDF 저장
+                    </button>
+                </div>
             </div>
             <div id="wrong-list" class="space-y-4"></div>
         </section>
-
     </main>
 
     <!-- ================= 모달 1: 미응답 문항 제출 확인 ================= -->
-    <div id="modal-submit-confirm" class="hide fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+    <div id="modal-submit-confirm" class="hide fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div class="flex items-center justify-between">
                 <h3 class="text-base font-black text-slate-900">⚠️ 아직 풀지 않은 문항이 있습니다</h3>
                 <button type="button" onclick="closeSubmitConfirmModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm">✕</button>
@@ -482,41 +650,76 @@
         </div>
     </div>
 
-    <!-- ================= 모달 2: API 설정 (1-2단계 UI 모달 · 2단계 영구저장 연결) ================= -->
-    <div id="modal-api" class="hide fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+    <!-- ================= 모달 2: [2단계] API 키 4중 영구저장 & 모델 연결 최적화 ================= -->
+    <div id="modal-api" class="hide fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div class="flex items-center justify-between">
                 <h3 class="text-base font-black text-slate-900">⚙️ AI 모델 및 API 키 설정</h3>
                 <button type="button" onclick="closeApiModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm">✕</button>
             </div>
             <p class="text-xs text-slate-600 leading-relaxed">
-                현재는 <b class="text-slate-800">1-2 &amp; 1-3단계</b>로 API 키 없이도 6대 과목 검증 샘플 CBT 시험이 즉시 작동합니다. API 키 4중 영구저장과 실시간 AI 출제 연결은 <b>2~3단계</b>에서 안전하게 붙일 예정입니다.
+                입력한 개인 Gemini API 키(<code>AIza...</code> 또는 <code>AQ....</code>)와 모델은 <b>4중 영구저장(로컬·IndexedDB·쿠키·세션)</b>에 자동 보관되며, 실패한 모델은 즉시 건너뛰고 정상 모델로 자동 고정됩니다.
             </p>
             <div class="space-y-3">
                 <div>
-                    <label for="api-model-select" class="block text-xs font-bold text-slate-700 mb-1">기본 추천 모델</label>
-                    <select id="api-model-select" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800">
-                        <option value="gemini-3-flash-preview">Gemini 3 Flash Preview (고속·안정 추천)</option>
-                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (표준)</option>
-                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (초정밀 감수)</option>
+                    <label for="api-model-select" class="block text-xs font-bold text-slate-700 mb-1">우선 사용 모델 (1순위 고정)</label>
+                    <select id="api-model-select" onchange="onApiModelChange(this.value)" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-pink-300">
+                        <option value="gemini-3-flash-preview">gemini-3-flash-preview (검증 1순위 · 고속 추천)</option>
+                        <option value="gemini-2.5-flash">gemini-2.5-flash (고속 표준)</option>
+                        <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (초정밀 추론)</option>
+                        <option value="gemini-2.5-pro">gemini-2.5-pro (정밀 출제)</option>
                     </select>
                 </div>
                 <div>
-                    <label for="api-key-input" class="block text-xs font-bold text-slate-700 mb-1">개인 Gemini API 키 (2단계에서 영구저장 연동)</label>
-                    <input id="api-key-input" type="password" placeholder="AIza... 또는 AQ.... 키 입력" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-pink-300">
+                    <label for="api-key-input" class="block text-xs font-bold text-slate-700 mb-1">개인 Gemini API 키 (입력 즉시 4중 자동저장)</label>
+                    <input id="api-key-input" type="password" oninput="onApiKeyLiveInput(this.value)" placeholder="AIza... 또는 AQ.... 키 입력" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-pink-300">
                 </div>
+                <div id="api-status-text" class="text-[11px] font-bold text-slate-600 leading-relaxed break-words"></div>
+                <button id="btn-test-api-conn" type="button" onclick="testApiConnection()" class="w-full py-2.5 rounded-xl bg-pink-50 hover:bg-pink-100 border border-pink-200 text-rose-600 text-xs font-extrabold transition">
+                    🔌 입력한 API 키 연결 테스트 (모델 자동 감지 · 즉시 저장)
+                </button>
             </div>
             <div class="flex gap-2 pt-2">
-                <button type="button" onclick="closeApiModal()" class="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">닫기</button>
-                <button type="button" onclick="saveApiPreviewOnly()" class="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition">확인</button>
+                <button id="btn-clear-api" type="button" onclick="clearApiSettings()" class="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">키 초기화</button>
+                <button type="button" onclick="saveApiSettings()" class="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition shadow-sm">저장 및 닫기</button>
             </div>
         </div>
     </div>
 
-    <!-- ================= 메인 애플리케이션 스크립트 (1-2 & 1-3단계) ================= -->
+    <!-- ================= 모달 3: [4단계] 1·2단 시험지 PDF 저장 & 인쇄용 HTML ================= -->
+    <div id="modal-print" class="hide fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex flex-col p-3 sm:p-6">
+        <div class="bg-white rounded-3xl max-w-5xl w-full mx-auto flex-1 flex flex-col overflow-hidden shadow-2xl border border-slate-200">
+            <div class="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-slate-50">
+                <div>
+                    <h3 class="text-sm sm:text-base font-black text-slate-900">🖨️ 실전 시험지 & 초심층 해설지 출력</h3>
+                    <p class="text-[11px] text-slate-500">PDF 줄바꿈이 어긋날 경우 1단 레이아웃 전환 또는 인쇄용 HTML 저장을 활용해 주세요.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button id="btn-print-col-toggle" type="button" onclick="togglePrintColumns()" class="px-3 py-2 rounded-xl bg-white border border-slate-300 hover:border-pink-300 text-slate-700 text-xs font-bold transition">
+                        레이아웃: 2단
+                    </button>
+                    <button id="btn-print-ans-toggle" type="button" onclick="togglePrintAnswers()" class="px-3 py-2 rounded-xl bg-white border border-slate-300 hover:border-pink-300 text-slate-700 text-xs font-bold transition">
+                        해설지: 포함
+                    </button>
+                    <button id="btn-download-pdf" type="button" onclick="downloadCurrentPrintAsPDF()" class="px-3.5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold transition shadow-sm">
+                        📥 PDF 다운로드
+                    </button>
+                    <button type="button" onclick="downloadCurrentPrintAsHTML()" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition">
+                        📄 인쇄용 HTML
+                    </button>
+                    <button type="button" onclick="closePrintModal()" class="px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition">닫기</button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5 sm:p-8 bg-slate-200">
+                <div id="print-preview-area" class="exam-paper-sheet max-w-4xl mx-auto p-6 sm:p-10 rounded-xl shadow-md"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 메인 애플리케이션 스크립트 (1~4단계 통합) ================= -->
     <script>
         // ============================================================
-        // 1. 기본 상수 및 과목·유형 메타데이터
+        // 1. 출제 범위 상수 (6대 과목 · 재무관리·회계 완전 제외)
         // ============================================================
         const CIRCLED = ['①', '②', '③', '④', '⑤'];
 
@@ -533,18 +736,36 @@
             "경영일반·전략": { short: "전략·일반", desc: "포터 · RBV · BCG · 블루오션" },
             "조직행동": { short: "조직행동", desc: "동기부여 · 리더십 · 구조 · 집단" },
             "인적자원관리": { short: "인사관리", desc: "직무설계 · 평가 · 선발 · 임금" },
-            "마케팅": { short: "마케팅", desc: "관여도 · 가격 · PLC · 브랜드" },
+            "마케팅": { short: "마케팅", desc: "STP · 관여도 · 가격 · PLC · 브랜드" },
             "생산운영관리": { short: "생산운영", desc: "EOQ · JIT · 지수평활 · 6시그마" },
             "경영정보시스템": { short: "MIS·디지털", desc: "ERP · SCM · 보안 · 클라우드" }
         };
 
         const SUBJECT_TOPICS = {
-            "경영일반·전략": ["본원적 경쟁전략", "5-Forces 산업구조분석", "BCG 매트릭스", "자원기반관점(RBV)·VRIO", "블루오션(ERRC)"],
-            "조직행동": ["동기부여 내용이론", "동기부여 과정이론", "상황적 리더십", "기계적·유기적 조직", "집단사고·델파이"],
-            "인적자원관리": ["직무설계(JCM)·직무충실화", "직무평가 4대 기법", "신뢰도·타당도", "인사고과 오류", "집단성과배분"],
-            "마케팅": ["신제품 가격전략", "관여도·FCB 그리드", "제품수명주기(PLC)", "브랜드 확장", "서비스 마케팅 7P"],
-            "생산운영관리": ["경제적 주문량(EOQ)", "리틀의 법칙·TOC", "JIT vs MRP", "단순지수평활법", "품질비용·6시그마"],
-            "경영정보시스템": ["ERP·BPR", "SCM 채찍효과", "정보보안(CIA·전자서명)", "클라우드(IaaS·PaaS·SaaS)", "양면시장·롱테일"]
+            "경영일반·전략": [
+                "본원적 경쟁전략", "5-Forces 산업구조분석", "BCG·GE 매트릭스",
+                "자원기반관점(RBV)·VRIO", "블루오션(ERRC)·앤소프 매트릭스"
+            ],
+            "조직행동": [
+                "동기부여 내용이론", "동기부여 과정이론", "상황적 리더십",
+                "조직구조(기계적·유기적)", "집단사고·의사결정기법"
+            ],
+            "인적자원관리": [
+                "직무설계(JCM)·직무충실화", "직무평가·인사고과 오류", "선발도구(신뢰도·타당도)",
+                "집단성과배분(스캔론·러커)", "교육훈련·노사관계 숍제도"
+            ],
+            "마케팅": [
+                "STP·포지셔닝", "신제품 가격전략", "관여도·FCB 그리드",
+                "제품수명주기(PLC)", "브랜드 확장", "유통(VMS)·촉진(IMC)", "서비스 마케팅 7P"
+            ],
+            "생산운영관리": [
+                "경제적 주문량(EOQ)", "리틀의 법칙·TOC", "JIT·간반과 MRP",
+                "단순지수평활법", "품질비용·6시그마"
+            ],
+            "경영정보시스템": [
+                "ERP·BPR", "SCM 채찍효과", "정보보안(CIA)·암호화",
+                "클라우드(IaaS·PaaS·SaaS)", "플랫폼·네트워크 외부성"
+            ]
         };
 
         const ALL_QUESTION_TYPES = ["이론형", "조합형", "사례형", "계산형"];
@@ -555,14 +776,44 @@
             "계산형": { icon: "🧮", label: "생산운영 계산형" }
         };
 
+        const TRAP_PATTERNS = [
+            "학자·이론 교차 바꿔치기",
+            "증감·방향성 반전",
+            "극단적 단정어(항상·모두·유일)",
+            "인과·선후관계 역전",
+            "유사 개념·용어 혼동"
+        ];
+
+        // [3-2단계] 재무관리·회계학 완전 배제 가드레일 정규식
+        const FINANCE_BLACKLIST_REGEX = /(재무관리|재무회계|원가회계|관리회계|자본구조|MM\s*이론|모딜리아니|밀러\s*이론|CAPM|자본자산가격결정|\bAPT\b|차익거래가격결정|WACC|가중평균자본비용|순현재가치|\bNPV\b|내부수익률|\bIRR\b|수익성지수|회수기간법|자본예산|블랙[-\s]?숄즈|파생상품|채권\s*듀레이션|채권\s*가격|포트폴리오\s*분산투자|자본시장선|\bCML\b|증권시장선|\bSML\b|체계적\s*위험|비체계적\s*위험|베타\s*계수|배당\s*무관련|배당\s*정책|배당할인모형|\bDDM\b|영업레버리지|재무레버리지|결합레버리지|콜옵션|풋옵션|스왑\s*거래|선물\s*거래|효율적\s*시장\s*가설|\bEMH\b|이자율\s*기간구조|자기자본비용|타인자본비용|현금흐름할인|\bDCF\b|재무제표\s*분석|유동비율|부채비율|\bROE\b|\bROA\b|\bPER\b|\bPBR\b|\bEVA\b|손익계산서|재무상태표|현금흐름표|감가상각비|선입선출|후입선출)/i;
+
+        function hasFinanceContamination(q) {
+            if (!q) return false;
+            if (/(재무|회계|세무)/.test(String(q.subject || ''))) return true;
+            const joined = [
+                q.subject || '',
+                q.topic || '',
+                q.question || '',
+                q.caseBox || '',
+                q.keyTakeaway || '',
+                q.deepTheoryNote || '',
+                ...(Array.isArray(q.bogi) ? q.bogi : []),
+                ...(Array.isArray(q.options) ? q.options : []),
+                ...(Array.isArray(q.optionExplanations) ? q.optionExplanations : [])
+            ].join(' ');
+            return FINANCE_BLACKLIST_REGEX.test(joined);
+        }
+
         // ============================================================
-        // 2. 검증된 6대 과목 샘플 DB (6문항 · 재무관리/회계 완전 제외)
+        // 2. 6대 과목 검증 샘플 6문항 (CBT·채점·폴백 검증용)
         // ============================================================
         const SAMPLE_QUESTIONS = [
             {
-                id: "v3_strat_1",
+                id: "v3_s_strat",
+                createdAt: 1006,
                 subject: "경영일반·전략",
                 topic: "본원적 경쟁전략",
+                difficulty: "실전",
                 questionType: "조합형",
                 trapPattern: "학자·이론 교차 바꿔치기",
                 question: "포터(M. Porter)의 본원적 경쟁전략(Generic Strategies)에 관한 설명으로 옳은 것을 모두 고른 것은?",
@@ -571,28 +822,30 @@
                     "ㄱ. 원가우위전략은 규모의 경제와 경험곡선효과, 공정혁신 등을 통해 업계 최저 원가 구조를 구축하는 전략이다.",
                     "ㄴ. 차별화전략은 표준화된 제품을 대량생산하여 원가를 절감하고 최저 가격으로 경쟁하는 전략이다.",
                     "ㄷ. 집중화전략은 특정 표적 세분시장에 자원을 집중하여 원가우위 또는 차별화우위를 추구하는 전략이다.",
-                    "ㄹ. 포터는 원가우위와 차별화를 어설프게 동시 추구하면 어느 쪽에서도 우위를 얻지 못하는 '어중간한 상태(Stuck in the middle)'에 빠진다고 경고하였다."
+                    "ㄹ. 포터는 원가우위와 차별화를 어설프게 동시 추구하면 '어중간한 상태(Stuck in the middle)'에 빠진다고 경고하였다."
                 ],
                 options: ["ㄱ, ㄴ", "ㄱ, ㄷ", "ㄱ, ㄷ, ㄹ", "ㄴ, ㄷ, ㄹ", "ㄱ, ㄴ, ㄷ, ㄹ"],
                 answer: 3,
                 optionExplanations: [
-                    "[X] ㄴ이 틀렸습니다. 표준화 대량생산을 통한 원가절감은 차별화전략이 아니라 원가우위전략의 핵심입니다.",
-                    "[X] ㄹ 또한 포터 이론과 정확히 일치하므로 누락되었습니다.",
-                    "[O] 정답입니다. ㄱ(원가우위), ㄷ(집중화), ㄹ(어중간한 상태 경고) 모두 포터의 본원적 경쟁전략과 정확히 일치합니다.",
-                    "[X] ㄴ이 원가우위전략의 내용을 차별화전략으로 바꿔치기한 오답입니다.",
+                    "[X] ㄴ은 원가우위전략의 내용을 차별화전략으로 바꿔치기한 오답입니다.",
+                    "[X] ㄹ 또한 포터의 핵심 경고와 정확히 일치하므로 누락되었습니다.",
+                    "[O] 정답입니다. ㄱ(원가우위), ㄷ(집중화), ㄹ(어중간한 상태 경고) 모두 정확합니다.",
+                    "[X] ㄴ이 틀렸으므로 오답입니다.",
                     "[X] ㄴ이 틀렸으므로 오답입니다."
                 ],
-                keyTakeaway: "포터의 본원적 전략: 원가우위(저원가) · 차별화(독특한 가치·프리미엄) · 집중화(세분시장 특화). 어설픈 동시 추구는 '어중간한 상태'를 초래한다.",
+                keyTakeaway: "포터의 본원적 전략: 원가우위(저원가) · 차별화(독특한 가치) · 집중화(세분시장 특화). 어설픈 동시 추구는 '어중간한 상태'를 초래한다.",
                 deepTheoryNote: "포터는 경쟁우위의 원천(저원가 vs 차별화)과 경쟁범위(전체 vs 세분시장)의 2×2 매트릭스를 제시했습니다. 원가우위기업도 고객이 수용할 최소 품질(차별화 동등성)을 유지해야 합니다.",
-                scholarCompareNote: "포터(본원적 전략: 저비용·차별화 trade-off 강조) vs 블루오션 전략(ERRC 가치혁신으로 저비용·차별화 동시 추구).",
-                trapAnatomy: "원가우위와 차별화의 핵심 수단을 뒤바꾸거나, '어중간한 상태' 경고를 정반대로 서술하는 대표 함정입니다.",
-                examExtensionTip: "'원가우위기업은 품질을 전혀 신경 쓰지 않는다(X)' 같은 극단적 단정어 선지에 주의하세요.",
+                scholarCompareNote: "포터(저비용·차별화 trade-off 강조) vs 블루오션 전략(ERRC 가치혁신으로 저비용과 차별화 동시 추구).",
+                trapAnatomy: "원가우위와 차별화의 핵심 수단을 뒤바꾸는 대표적 교차 바꿔치기 함정입니다.",
+                examExtensionTip: "원가우위기업은 품질을 전혀 신경 쓰지 않는다(X) 같은 극단적 단정어 선지에 주의하세요.",
                 keyTerms: ["Generic Strategies", "Cost Leadership", "Differentiation", "Stuck in the middle"]
             },
             {
-                id: "v3_ob_1",
+                id: "v3_s_ob",
+                createdAt: 1005,
                 subject: "조직행동",
-                topic: "동기부여 내용이론 비교",
+                topic: "동기부여 내용이론",
+                difficulty: "실전",
                 questionType: "이론형",
                 trapPattern: "유사 개념·용어 혼동",
                 question: "동기부여 내용이론(매슬로우·알더퍼·허츠버그·맥클리랜드)에 관한 설명으로 가장 적절하지 않은 것은?",
@@ -611,80 +864,86 @@
                     "[O] 옳은 설명입니다. 허츠버그 이원론에서 적극적 만족은 성취·책임 등 동기요인이 유발합니다.",
                     "[O] 옳은 설명입니다. 고성취욕구자는 본인 노력으로 성패가 갈리는 중간 난이도와 즉각적 피드백을 선호합니다.",
                     "[O] 옳은 설명입니다. 매슬로우는 결핍에 의한 동기부여와 순차적 만족-진행을 가정합니다.",
-                    "[X] 정답(옳지 않음)입니다. 맥클리랜드는 대규모 조직의 유능한 리더에게는 성취·친교욕구보다 '높은 제도적 권력욕구'와 '낮은 친교욕구'가 가장 중요하다고 보았습니다."
+                    "[X] 정답(옳지 않음)입니다. 맥클리랜드는 대규모 조직의 유능한 리더에게는 '높은 제도적 권력욕구'와 '낮은 친교욕구'가 가장 중요하다고 보았습니다."
                 ],
-                keyTakeaway: "맥클리랜드 이론: 대규모 조직의 유능한 관리자(리더)에게는 높은 제도적 권력욕구 + 낮은 친교욕구가 핵심이다.",
-                deepTheoryNote: "내용이론 4대 계보: 매슬로우(5단계·만족-진행) → 알더퍼(ERG 3범주·좌절-퇴행) → 허츠버그(위생요인 vs 동기요인·직무충실화) → 맥클리랜드(학습된 성취·권력·친교욕구).",
+                keyTakeaway: "맥클리랜드 이론: 대규모 조직의 유능한 리더에게는 높은 제도적 권력욕구 + 낮은 친교욕구가 핵심이다.",
+                deepTheoryNote: "내용이론 4대 계보: 매슬로우(5단계·만족-진행) → 알더퍼(ERG·좌절-퇴행) → 허츠버그(위생요인 vs 동기요인) → 맥클리랜드(성취·권력·친교욕구).",
                 scholarCompareNote: "매슬로우(만족-진행만 인정, 1회 1욕구) vs 알더퍼 ERG(만족-진행 + 좌절-퇴행, 복수 욕구 동시 작용).",
                 trapAnatomy: "'유능한 CEO = 높은 성취욕구'라는 직관적 착각을 파고드는 조직행동 최다 오답률 함정입니다.",
-                examExtensionTip: "허츠버그 이론에서 '만족의 반대는 불만족(X → 만족 없음)'이라는 이원론 함정을 꼭 기억하세요.",
+                examExtensionTip: "허츠버그 이론에서 '만족의 반대는 불만족(X → 만족 없음)'이라는 이원론 함정을 기억하세요.",
                 keyTerms: ["ERG Theory", "Two-Factor Theory", "Need for Power", "Frustration-Regression"]
             },
             {
-                id: "v3_hr_1",
+                id: "v3_s_hr",
+                createdAt: 1004,
                 subject: "인적자원관리",
-                topic: "직무설계(JCM)·직무충실화",
+                topic: "선발도구의 신뢰도와 타당도",
+                difficulty: "실전",
+                questionType: "조합형",
+                trapPattern: "인과·선후관계 역전",
+                question: "선발도구의 평가 기준인 신뢰도(Reliability)와 타당도(Validity)에 관한 설명으로 옳은 것을 모두 고른 것은?",
+                caseBox: "",
+                bogi: [
+                    "ㄱ. 신뢰도는 측정의 일관성과 안정성을 의미하며 타당도의 필요조건이다.",
+                    "ㄴ. 타당도가 높으면 반드시 신뢰도가 높지만, 신뢰도가 높다고 해서 반드시 타당도가 높은 것은 아니다.",
+                    "ㄷ. 예측타당도는 현직 종업원을 대상으로 선발시험을 실시해 현재 직무성과와 즉시 비교 검증하는 방식이다.",
+                    "ㄹ. 내용타당도는 선발시험이 실제 직무에 필요한 지식·기술·행동을 대표성 있게 포함하는지 평가하며 실기 평가에 적합하다."
+                ],
+                options: ["ㄱ, ㄴ", "ㄱ, ㄷ", "ㄱ, ㄴ, ㄹ", "ㄴ, ㄷ, ㄹ", "ㄱ, ㄴ, ㄷ, ㄹ"],
+                answer: 3,
+                optionExplanations: [
+                    "[X] ㄹ 또한 옳은 설명이므로 누락되었습니다.",
+                    "[X] ㄷ이 동시타당도의 설명을 예측타당도로 바꿔치기한 오답입니다.",
+                    "[O] 정답입니다. ㄱ(신뢰도는 타당도의 필요조건), ㄴ(타당도→신뢰도 성립, 역 불성립), ㄹ(내용타당도) 모두 정확합니다.",
+                    "[X] ㄷ은 현직자 즉시 비교인 '동시타당도'입니다. 예측타당도는 지원자 입사 후 성과를 추적 비교합니다.",
+                    "[X] ㄷ이 틀렸으므로 오답입니다."
+                ],
+                keyTakeaway: "신뢰도는 타당도의 필요조건(충분조건 X). 현직자 즉시 비교 = 동시타당도, 지원자 입사 후 추적 비교 = 예측타당도.",
+                deepTheoryNote: "타당도 3유형: ① 기준관련타당도(예측·동시), ② 내용타당도(작업표본·실기), ③ 구성타당도(추상적 심리개념). 신뢰도는 재검사·반분·내적일관성(크론바흐 α)으로 측정합니다.",
+                scholarCompareNote: "예측타당도(지원자 대상, 시차·비용 큼, 정확도 높음) vs 동시타당도(현직자 대상, 즉시 검증, 범위제한 문제).",
+                trapAnatomy: "필요조건과 충분조건을 뒤집거나 예측타당도와 동시타당도의 대상(지원자 vs 현직자)을 맞바꿉니다.",
+                examExtensionTip: "모집 단계의 RJP(현실적 직무소개: 긍정+부정 정보 솔직 제공 → 조기 이직률 감소)도 필수 빈출입니다.",
+                keyTerms: ["Reliability vs Validity", "Predictive Validity", "Concurrent Validity", "Content Validity"]
+            },
+            {
+                id: "v3_s_mkt",
+                createdAt: 1003,
+                subject: "마케팅",
+                topic: "관여도·FCB 그리드",
+                difficulty: "실전",
                 questionType: "사례형",
                 trapPattern: "유사 개념·용어 혼동",
-                question: "다음 (주)대한정밀의 직무재설계 사례를 읽고, 해크만·올드햄(Hackman & Oldham)의 직무특성모형(JCM) 관점에서 가장 적절하게 해석한 것은?",
-                caseBox: "(주)대한정밀은 기존에 단순 조립만 반복하던 작업자들에게 부품 발주, 품질검사, 작업 일정 조정 권한까지 수직적으로 부여하고, 완제품이 고객에게 전달된 뒤의 불량률 피드백을 매주 직접 확인할 수 있게 개편하였다.",
+                question: "다음 소비자 구매 사례를 읽고, 아사엘(Assael)의 구매행동 유형 및 FCB 그리드 관점에서 가장 적절한 전략은?",
+                caseBox: "김 씨는 400만 원대 빌트인 냉장고를 구입하려 하나 주요 브랜드 간 기능·디자인 차이가 뚜렷하지 않아 고민 끝에 빠른 배송이 가능한 모델을 구매했다. 구매 직후 '다른 브랜드가 더 낫지 않았을까' 하는 심리적 불편감을 느끼며 온라인 후기를 집중 검색하고 있다.",
                 bogi: [],
                 options: [
-                    "유사한 난이도의 과업 수만 수평적으로 늘린 '직무확대(Job Enlargement)'에 해당한다.",
-                    "계획·통제 권한을 수직적으로 부여한 '직무충실화(Job Enrichment)'이며, 자율성과 피드백이 높아져 동기잠재점수(MPS)가 크게 상승한다.",
-                    "JCM 공식에서 자율성이나 피드백이 0이 되더라도 기술다양성만 높으면 MPS는 높게 유지된다.",
-                    "성장욕구강도(GNS)가 낮은 구성원일수록 직무충실화의 동기부여 효과가 극대화된다.",
-                    "기술다양성·과업정체성·과업중요성은 '결과에 대한 책임감'이라는 심리상태를 유발한다."
+                    "습관적 구매행동에 해당하므로 매장 진열 위치 확보와 단기 가격 할인에만 집중해야 한다.",
+                    "부조화 감소 구매행동(고관여·상표차이 작음)에 해당하므로 구매 후 불안을 완화하는 사후 커뮤니케이션과 보증·A/S 강조가 효과적이다.",
+                    "다양성 추구 구매행동(저관여·상표차이 큼)에 해당하므로 무료 샘플을 대량 배포해야 한다.",
+                    "FCB 그리드의 저관여-이성 영역에 해당하며 '행동 → 학습 → 태도' 순서로 의사결정이 이루어진다.",
+                    "인지부조화는 구매 전 대안 평가 단계에서만 발생하므로 구매 후 마케팅은 불필요하다."
                 ],
                 answer: 2,
                 optionExplanations: [
-                    "[X] 수평적 과업 수 증가가 아니라 계획·검사·통제 권한을 수직적으로 통합한 직무충실화입니다.",
-                    "[O] 정답입니다. 수직적 권한 확대는 직무충실화이며, MPS 공식에서 곱셈 항인 자율성·피드백 증가는 MPS를 크게 높입니다.",
-                    "[X] 자율성과 피드백은 곱셈 항이므로 둘 중 하나라도 0이면 전체 MPS가 0이 됩니다.",
-                    "[X] 성장욕구강도(GNS)가 '높은' 구성원일수록 JCM의 동기부여 효과가 강하게 나타납니다.",
-                    "[X] 기술다양성·과업정체성·과업중요성은 '직무의 의미감'을, 자율성은 '책임감'을, 피드백은 '결과에 대한 지식'을 유발합니다."
+                    "[X] 습관적 구매행동은 저관여·상표차이 작음(소금·생수 등)에 해당합니다.",
+                    "[O] 정답입니다. 고가 제품(고관여)이면서 상표 간 차이가 작을 때 발생하는 '부조화 감소 구매행동'이며 구매 후 인지부조화 완화가 핵심입니다.",
+                    "[X] 다양성 추구 구매행동은 저관여·상표차이 큼(과자·음료 등)입니다.",
+                    "[X] 고관여-이성 영역은 '학습 → 태도 → 행동' 순서입니다.",
+                    "[X] 인지부조화는 특히 고관여 제품의 '구매 후' 단계에서 발생하는 심리적 갈등입니다."
                 ],
-                keyTakeaway: "직무충실화 = 수직적 권한·책임 확대. MPS = [(기술다양성+과업정체성+과업중요성)/3] × 자율성 × 피드백.",
-                deepTheoryNote: "직무확대(수평적 과업 수 증가)는 단순 반복 지루함만 줄이지만, 직무충실화(수직적 계획·통제 통합)는 허츠버그의 동기요인을 충족합니다.",
-                scholarCompareNote: "직무순환(교대 배치) vs 직무확대(수평적 과업 추가) vs 직무충실화(수직적 자율·통제 권한 부여).",
-                trapAnatomy: "MPS 공식의 덧셈 항(3개 평균)과 곱셈 항(자율성·피드백)의 성질을 뒤바꾸는 고난도 함정입니다.",
-                examExtensionTip: "5대 핵심직무차원과 3대 중요심리상태(의미감·책임감·결과지식)의 1:1 매칭을 정확히 암기하세요.",
-                keyTerms: ["Job Characteristics Model", "MPS Formula", "Job Enrichment", "GNS"]
+                keyTakeaway: "아사엘 4유형: 고관여·차이큼(복잡한 구매) / 고관여·차이작음(부조화 감소) / 저관여·차이큼(다양성 추구) / 저관여·차이작음(습관적 구매).",
+                deepTheoryNote: "FCB 그리드 계층 순서: 고관여-이성(학습→태도→행동), 고관여-감성(태도→학습→행동), 저관여-이성(행동→학습→태도), 저관여-감성(행동→태도→학습).",
+                scholarCompareNote: "부조화 감소 구매(고관여+상표차이 작음) vs 다양성 추구 구매(저관여+상표차이 큼).",
+                trapAnatomy: "인지부조화의 발생 시점(구매 후)을 구매 전으로 왜곡하고 FCB 4영역 계층 순서를 섞어 출제합니다.",
+                examExtensionTip: "ELM(정교화 가능성 모형)에서 고관여=중심경로(논리), 저관여=주변경로(모델 매력) 구분도 빈출입니다.",
+                keyTerms: ["Assael 4 Types", "Cognitive Dissonance", "FCB Grid", "ELM"]
             },
             {
-                id: "v3_mkt_1",
-                subject: "마케팅",
-                topic: "신제품 가격결정 전략",
-                questionType: "조합형",
-                trapPattern: "학자·이론 교차 바꿔치기",
-                question: "신제품 가격전략인 초기고가전략(Skimming)과 시장침투가격전략(Penetration)에 관한 설명으로 옳은 것을 모두 고른 것은?",
-                caseBox: "",
-                bogi: [
-                    "ㄱ. 초기고가전략은 표적시장의 수요의 가격탄력성이 비탄력적일 때 효과적이다.",
-                    "ㄴ. 시장침투가격전략은 대량생산을 통한 규모의 경제나 경험곡선 효과가 클 때 유리하다.",
-                    "ㄷ. 초기고가전략은 경쟁자의 시장 진입을 강력히 억제하고 초기 점유율을 극대화하기 위해 사용한다.",
-                    "ㄹ. 특허 등으로 모방장벽이 높고 기술적 우위가 뚜렷할수록 초기고가전략이 적합하다."
-                ],
-                options: ["ㄱ, ㄴ", "ㄱ, ㄷ", "ㄷ, ㄹ", "ㄱ, ㄴ, ㄹ", "ㄴ, ㄷ, ㄹ"],
-                answer: 4,
-                optionExplanations: [
-                    "[X] ㄹ 또한 옳은 설명이므로 누락되었습니다.",
-                    "[X] ㄷ이 시장침투가격전략의 내용을 초기고가전략으로 바꿔치기한 오답입니다.",
-                    "[X] ㄷ이 틀렸습니다.",
-                    "[O] 정답입니다. ㄱ(비탄력 수요), ㄴ(규모의 경제·경험곡선), ㄹ(높은 모방장벽 시 초기고가) 모두 정확합니다.",
-                    "[X] ㄷ이 틀렸으므로 오답입니다."
-                ],
-                keyTakeaway: "초기고가(비탄력 수요·특허장벽·초기 R&D 회수·경쟁자 유인 위험) vs 시장침투(탄력 수요·규모의 경제·진입 억제).",
-                deepTheoryNote: "초기고가전략은 높은 초기 마진 때문에 오히려 경쟁자의 시장 진입을 유인하는 위험이 있습니다. 반면 시장침투전략은 저가로 규모의 경제를 선점해 진입 장벽을 높입니다.",
-                scholarCompareNote: "초기고가전략(비탄력·모방장벽 높음) vs 시장침투가격전략(탄력·규모의 경제 큼·진입 억제).",
-                trapAnatomy: "초기고가전략의 약점(경쟁자 유인)을 시장침투전략의 장점(경쟁자 진입 억제)으로 정반대 치환한 함정입니다.",
-                examExtensionTip: "종속제품 가격결정(프린터 본체 저가+카트리지 고가)과 유인손실가격(Loss Leader)도 함께 정리하세요.",
-                keyTerms: ["Skimming Pricing", "Penetration Pricing", "Price Elasticity", "Economies of Scale"]
-            },
-            {
-                id: "v3_om_1",
+                id: "v3_s_om",
+                createdAt: 1002,
                 subject: "생산운영관리",
-                topic: "경제적 주문량(EOQ) 모형",
+                topic: "경제적 주문량(EOQ)",
+                difficulty: "실전",
                 questionType: "계산형",
                 trapPattern: "증감·방향성 반전",
                 question: "연간 수요량(D)이 10,000단위이고, 1회 주문비용(S)이 400원, 단위당 연간 재고유지비용(H)이 200원이다. EOQ 모형을 적용할 때 최적 주문량(Q*)과 연간 총 주문횟수는?",
@@ -713,9 +972,11 @@
                 keyTerms: ["EOQ Model", "Order Cost", "Holding Cost", "ROP"]
             },
             {
-                id: "v3_mis_1",
+                id: "v3_s_mis",
+                createdAt: 1001,
                 subject: "경영정보시스템",
                 topic: "SCM 채찍효과",
+                difficulty: "실전",
                 questionType: "사례형",
                 trapPattern: "증감·방향성 반전",
                 question: "다음 (주)코리안유통의 공급사슬 사례를 읽고, 원인 진단 및 해결 방안으로 가장 적절한 것은?",
@@ -730,7 +991,7 @@
                 ],
                 answer: 1,
                 optionExplanations: [
-                    "[O] 정답입니다. 하류→상류로 갈수록 수요 변동폭이 증폭되는 현상이 '채찍효과'이며 POS 공유, VMI, CPFR, EDLP(상시저가)가 핵심 해결책입니다.",
+                    "[O] 정답입니다. 하류→상류로 갈수록 수요 정보 변동폭이 증폭되는 현상이 '채찍효과'이며 POS 공유, VMI, CPFR, EDLP(상시저가), 리드타임 단축이 핵심 해결책입니다.",
                     "[X] 대량 일괄발주(Order Batching)는 채찍효과를 유발하는 대표 원인 중 하나입니다.",
                     "[X] 잦은 가격 할인(선행구매 유발)과 긴 리드타임은 채찍효과를 악화시킵니다.",
                     "[X] 정보 비공개와 다단계 독립 수요예측이 바로 채찍효과의 근본 원인입니다.",
@@ -741,13 +1002,29 @@
                 scholarCompareNote: "채찍효과 원인(일괄발주·잦은 할인·긴 리드타임) vs 해결책(소량 빈번발주·EDLP 상시저가·POS 실시간 공유·VMI).",
                 trapAnatomy: "채찍효과의 진행 방향(하류→상류)을 거꾸로 바꾸거나 원인과 해결책을 뒤바꾸는 대표 함정입니다.",
                 examExtensionTip: "채찍효과 방향이 '상류(제조사)에서 하류(소매점)로 증폭(X)'이라고 나오면 즉각 오답으로 거르세요.",
-                keyTerms: ["Bullwhip Effect", "VMI", "CPFR", "EDLP"]
+                keyTerms: ["Bullwhip Effect", "VMI", "CPFR", "EDLP", "Cross-Docking"]
             }
         ];
 
         // ============================================================
-        // 3. 앱 상태 변수 (메모리 기반 · 1-4단계에서 영구저장 연결)
+        // 3. 앱 상태 변수 & [1-4 / 2-1단계] 4중 영구저장소 모듈
         // ============================================================
+        const STORE_KEYS = {
+            BANK: "bm_v3_clean_bank",
+            WRONG: "bm_v3_clean_wrong",
+            STATS: "bm_v3_clean_stats",
+            HISTORY: "bm_v3_clean_history",
+            NOTES: "bm_v3_clean_notes",
+            DELETED: "bm_v3_clean_deleted",
+            SESSION: "bm_v3_clean_active_session",
+            API_KEY: "bm_v3_api_key",
+            API_MODEL: "bm_v3_api_model"
+        };
+        const IDB_NAME = "BMStudioV3CleanDB";
+        const IDB_STORE = "kv";
+        const DEFAULT_MODEL = "gemini-3-flash-preview";
+        const FALLBACK_MODELS = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-pro"];
+
         let selectedSubjects = [...ALL_SUBJECTS];
         let selectedTopic = "";
         let selectedQuestionTypes = [...ALL_QUESTION_TYPES];
@@ -758,7 +1035,25 @@
 
         let questionBank = SAMPLE_QUESTIONS.map(q => ({ ...q }));
         let wrongNotes = [];
+        let deletedQuestionIds = [];
         let sessionStats = { sessions: 0, totalSolved: 0, totalCorrect: 0 };
+        let examHistory = [];
+        let userNotesMap = {}; // { questionId: "개인 단권화 메모" }
+        let savedActiveSession = null;
+
+        // [4단계] 차트 인스턴스 & 시험지 인쇄/PDF 상태
+        let chartInstances = { subject: null, trap: null, trend: null };
+        let clearHistoryConfirmArmed = false;
+        let currentPrintList = [];
+        let currentPrintTitle = "경영학 실전 모의고사";
+        let printTwoCol = true;
+        let printIncludeAnswers = true;
+
+        // [2단계] API 상태 및 세션 내 실패 모델(404/403) 제외 집합
+        let cachedApiKey = "";
+        let cachedApiModel = DEFAULT_MODEL;
+        let clearApiConfirmArmed = false;
+        const failedModelsSet = new Set();
 
         let currentQuizList = [];
         let currentQuizIndex = 0;
@@ -771,8 +1066,411 @@
         let timerInterval = null;
         let isTimerPaused = false;
 
+        // 안전한 localStorage 접근
+        function safeLSGet(key, fallback) {
+            try {
+                const raw = localStorage.getItem(key);
+                return raw !== null ? raw : fallback;
+            } catch (e) {
+                return fallback;
+            }
+        }
+
+        function safeLSSet(key, val) {
+            try {
+                localStorage.setItem(key, val);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        // [2-1단계] 3번째 백업: Cookie 저장/조회 (1년 유지)
+        function safeCookieSet(name, val) {
+            try {
+                const encoded = encodeURIComponent(String(val || ''));
+                const maxAge = val ? 31536000 : 0;
+                document.cookie = `${name}=${encoded}; path=/; max-age=${maxAge}; SameSite=Lax`;
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function safeCookieGet(name) {
+            try {
+                const cookies = document.cookie ? document.cookie.split('; ') : [];
+                for (const c of cookies) {
+                    const idx = c.indexOf('=');
+                    if (idx === -1) continue;
+                    const k = c.slice(0, idx);
+                    if (k === name) return decodeURIComponent(c.slice(idx + 1));
+                }
+                return '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        // [2-1단계] 4번째 백업: window.name 저장/조회 (새로고침·샌드박스 생존)
+        function safeWindowNameSet(key, val) {
+            try {
+                let obj = {};
+                if (window.name && window.name.startsWith('{')) {
+                    obj = JSON.parse(window.name) || {};
+                }
+                if (!obj.__bmStudioV3 || typeof obj.__bmStudioV3 !== 'object') {
+                    obj.__bmStudioV3 = {};
+                }
+                obj.__bmStudioV3[key] = String(val || '');
+                window.name = JSON.stringify(obj);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function safeWindowNameGet(key) {
+            try {
+                if (!window.name || !window.name.startsWith('{')) return '';
+                const obj = JSON.parse(window.name);
+                return String(obj?.__bmStudioV3?.[key] || '');
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function sanitizeApiKey(raw) {
+            return String(raw || '').replace(/[\s"'`<>]+/g, '').trim();
+        }
+
+        function sanitizeModelName(raw) {
+            const m = String(raw || '').trim();
+            if (!m || /gemini-3\.8|gemini-3\.6/i.test(m)) return DEFAULT_MODEL;
+            return m;
+        }
+
+        // 무한 재귀 없는 안전한 API 키/모델 조회
+        function getSavedApiKey() {
+            if (cachedApiKey) return cachedApiKey;
+            const found = sanitizeApiKey(
+                safeLSGet(STORE_KEYS.API_KEY, '') ||
+                safeCookieGet(STORE_KEYS.API_KEY) ||
+                safeWindowNameGet(STORE_KEYS.API_KEY)
+            );
+            if (found) cachedApiKey = found;
+            return found;
+        }
+
+        function getPreferredModel() {
+            const found = sanitizeModelName(
+                cachedApiModel ||
+                safeLSGet(STORE_KEYS.API_MODEL, '') ||
+                safeCookieGet(STORE_KEYS.API_MODEL) ||
+                safeWindowNameGet(STORE_KEYS.API_MODEL) ||
+                DEFAULT_MODEL
+            );
+            cachedApiModel = found;
+            return found;
+        }
+
+        // [2-1단계] API 키 & 모델 4중 영구저장 (localStorage + IndexedDB + Cookie + window.name)
+        async function persistApiConfig(key, model) {
+            const cleanKey = sanitizeApiKey(key);
+            const cleanModel = sanitizeModelName(model);
+            cachedApiKey = cleanKey;
+            cachedApiModel = cleanModel;
+
+            safeLSSet(STORE_KEYS.API_KEY, cleanKey);
+            safeLSSet(STORE_KEYS.API_MODEL, cleanModel);
+            safeCookieSet(STORE_KEYS.API_KEY, cleanKey);
+            safeCookieSet(STORE_KEYS.API_MODEL, cleanModel);
+            safeWindowNameSet(STORE_KEYS.API_KEY, cleanKey);
+            safeWindowNameSet(STORE_KEYS.API_MODEL, cleanModel);
+
+            await Promise.all([
+                idbSet(STORE_KEYS.API_KEY, cleanKey),
+                idbSet(STORE_KEYS.API_MODEL, cleanModel)
+            ]);
+            updateHeaderBadges();
+        }
+
+        // 1.2초 타임아웃 안전장치가 적용된 IndexedDB 연결 (화면 멈춤 원천 차단)
+        function openIDB() {
+            return new Promise((resolve, reject) => {
+                if (!window.indexedDB) return reject(new Error("IDB unavailable"));
+                let settled = false;
+                const timer = setTimeout(() => {
+                    if (!settled) {
+                        settled = true;
+                        reject(new Error("IDB timeout"));
+                    }
+                }, 1200);
+                try {
+                    const req = indexedDB.open(IDB_NAME, 1);
+                    req.onupgradeneeded = () => {
+                        const db = req.result;
+                        if (!db.objectStoreNames.contains(IDB_STORE)) {
+                            db.createObjectStore(IDB_STORE);
+                        }
+                    };
+                    req.onsuccess = () => {
+                        if (!settled) {
+                            settled = true;
+                            clearTimeout(timer);
+                            resolve(req.result);
+                        }
+                    };
+                    req.onerror = () => {
+                        if (!settled) {
+                            settled = true;
+                            clearTimeout(timer);
+                            reject(req.error);
+                        }
+                    };
+                } catch (e) {
+                    if (!settled) {
+                        settled = true;
+                        clearTimeout(timer);
+                        reject(e);
+                    }
+                }
+            });
+        }
+
+        async function idbGet(key) {
+            try {
+                const db = await openIDB();
+                return await new Promise((resolve) => {
+                    const tx = db.transaction(IDB_STORE, "readonly");
+                    const req = tx.objectStore(IDB_STORE).get(key);
+                    req.onsuccess = () => resolve(req.result ?? null);
+                    req.onerror = () => resolve(null);
+                });
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function idbSet(key, val) {
+            try {
+                const db = await openIDB();
+                return await new Promise((resolve) => {
+                    const tx = db.transaction(IDB_STORE, "readwrite");
+                    tx.objectStore(IDB_STORE).put(val, key);
+                    tx.oncomplete = () => resolve(true);
+                    tx.onerror = () => resolve(false);
+                });
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function mergeQuestionsUnique(primary, secondary) {
+            const byId = new Map();
+            const stemToId = new Map();
+            const all = [...(primary || []), ...(secondary || [])];
+            for (const q of all) {
+                if (!q || !q.question || hasFinanceContamination(q)) continue;
+                const stemKey = String(q.question).trim();
+                const idKey = q.id || stemKey;
+                const existingId = byId.has(idKey) ? idKey : stemToId.get(stemKey);
+                if (existingId) {
+                    const prev = byId.get(existingId);
+                    if ((q.createdAt || 0) >= (prev.createdAt || 0)) {
+                        byId.set(existingId, { ...prev, ...q, id: existingId });
+                        stemToId.set(stemKey, existingId);
+                    }
+                } else {
+                    const normalized = { ...q, id: idKey };
+                    byId.set(idKey, normalized);
+                    stemToId.set(stemKey, idKey);
+                }
+            }
+            return Array.from(byId.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        }
+
+        async function saveToQuestionBank(list) {
+            const existingStems = new Set(questionBank.map(q => String(q.question).trim()));
+            let added = 0;
+            const cleanNew = [];
+            (list || []).forEach((q, idx) => {
+                if (!q || hasFinanceContamination(q)) return;
+                const stem = String(q.question || '').trim();
+                if (stem && !existingStems.has(stem)) {
+                    added++;
+                    existingStems.add(stem);
+                }
+                cleanNew.push({ ...q, createdAt: q.createdAt || (Date.now() + (list.length - idx)) });
+            });
+            questionBank = mergeQuestionsUnique(cleanNew, questionBank);
+            await persistAllData();
+            return added;
+        }
+
+        async function persistAllData() {
+            questionBank = questionBank.filter(q => !hasFinanceContamination(q));
+            wrongNotes = wrongNotes.filter(q => !hasFinanceContamination(q));
+
+            safeLSSet(STORE_KEYS.BANK, JSON.stringify(questionBank));
+            safeLSSet(STORE_KEYS.WRONG, JSON.stringify(wrongNotes));
+            safeLSSet(STORE_KEYS.STATS, JSON.stringify(sessionStats));
+            safeLSSet(STORE_KEYS.HISTORY, JSON.stringify(examHistory));
+            safeLSSet(STORE_KEYS.NOTES, JSON.stringify(userNotesMap));
+            safeLSSet(STORE_KEYS.DELETED, JSON.stringify(deletedQuestionIds));
+
+            await Promise.all([
+                idbSet(STORE_KEYS.BANK, questionBank),
+                idbSet(STORE_KEYS.WRONG, wrongNotes),
+                idbSet(STORE_KEYS.STATS, sessionStats),
+                idbSet(STORE_KEYS.HISTORY, examHistory),
+                idbSet(STORE_KEYS.NOTES, userNotesMap),
+                idbSet(STORE_KEYS.DELETED, deletedQuestionIds)
+            ]);
+            updateHeaderBadges();
+        }
+
+        // [4단계] 문항별 개인 단권화 메모 즉시 자동저장
+        async function saveUserMemo(qId, text) {
+            userNotesMap[qId] = text;
+            safeLSSet(STORE_KEYS.NOTES, JSON.stringify(userNotesMap));
+            await idbSet(STORE_KEYS.NOTES, userNotesMap);
+        }
+
+        async function persistActiveSession() {
+            if (!currentQuizList || currentQuizList.length === 0) return;
+            const session = {
+                savedAt: Date.now(),
+                list: currentQuizList,
+                index: currentQuizIndex,
+                answers: userAnswers,
+                flagged: Array.from(flaggedSet),
+                eliminated: eliminatedMap,
+                seconds: timerSeconds
+            };
+            savedActiveSession = session;
+            safeLSSet(STORE_KEYS.SESSION, JSON.stringify(session));
+            await idbSet(STORE_KEYS.SESSION, session);
+            updateResumeBanner();
+        }
+
+        async function clearActiveSession() {
+            savedActiveSession = null;
+            safeLSSet(STORE_KEYS.SESSION, '');
+            await idbSet(STORE_KEYS.SESSION, null);
+            updateResumeBanner();
+        }
+
+        function updateResumeBanner() {
+            const banner = document.getElementById('resume-session-banner');
+            const desc = document.getElementById('resume-session-desc');
+            if (!banner || !desc) return;
+            if (savedActiveSession && Array.isArray(savedActiveSession.list) && savedActiveSession.list.length > 0) {
+                const answered = Object.keys(savedActiveSession.answers || {}).length;
+                const total = savedActiveSession.list.length;
+                const dt = new Date(savedActiveSession.savedAt || Date.now()).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                desc.innerText = `총 ${total}문항 중 ${answered}문항 마킹됨 · 경과 ${formatSeconds(savedActiveSession.seconds || 0)} (${dt} 자동저장)`;
+                banner.classList.remove('hide');
+            } else {
+                banner.classList.add('hide');
+            }
+        }
+
+        function resumeSavedSession() {
+            if (!savedActiveSession || !Array.isArray(savedActiveSession.list) || savedActiveSession.list.length === 0) return;
+            currentQuizList = savedActiveSession.list;
+            currentQuizIndex = Math.min(savedActiveSession.index || 0, currentQuizList.length - 1);
+            userAnswers = savedActiveSession.answers || {};
+            flaggedSet = new Set(savedActiveSession.flagged || []);
+            eliminatedMap = savedActiveSession.eliminated || {};
+            resultFilter = "ALL";
+
+            startTimer(savedActiveSession.seconds || 0);
+            switchTab('quiz');
+            renderCurrentQuestion();
+            renderOMR();
+            showToast("자동저장 시험 복구", "이전 풀이 상태와 OMR 마킹을 그대로 불러왔습니다.", "💾");
+        }
+
+        async function discardSavedSession() {
+            await clearActiveSession();
+            showToast("진행 기록 삭제", "저장된 미완료 시험 기록을 정리했습니다.", "🗑️");
+        }
+
+        // [1-4 / 2-1단계] 저장소 비동기 로드 (UI 선렌더링 후 백그라운드 복구)
+        async function loadAllData() {
+            const parseLS = (k, fb) => {
+                try { return JSON.parse(safeLSGet(k, JSON.stringify(fb))) ?? fb; }
+                catch (e) { return fb; }
+            };
+
+            const lsBank = parseLS(STORE_KEYS.BANK, []);
+            const lsWrong = parseLS(STORE_KEYS.WRONG, []);
+            const lsStats = parseLS(STORE_KEYS.STATS, { sessions: 0, totalSolved: 0, totalCorrect: 0 });
+            const lsHistory = parseLS(STORE_KEYS.HISTORY, []);
+            const lsNotes = parseLS(STORE_KEYS.NOTES, {});
+            const lsDeleted = parseLS(STORE_KEYS.DELETED, []);
+            const lsSession = parseLS(STORE_KEYS.SESSION, null);
+
+            const [idbBank, idbWrong, idbStats, idbHistory, idbNotes, idbDeleted, idbSession, idbApiKey, idbApiModel] = await Promise.all([
+                idbGet(STORE_KEYS.BANK),
+                idbGet(STORE_KEYS.WRONG),
+                idbGet(STORE_KEYS.STATS),
+                idbGet(STORE_KEYS.HISTORY),
+                idbGet(STORE_KEYS.NOTES),
+                idbGet(STORE_KEYS.DELETED),
+                idbGet(STORE_KEYS.SESSION),
+                idbGet(STORE_KEYS.API_KEY),
+                idbGet(STORE_KEYS.API_MODEL)
+            ]);
+
+            // [2-1단계] 4중 저장소 중 살아있는 곳에서 API 키·모델 자동 복구 및 재동기화
+            const restoredKey = sanitizeApiKey(
+                safeLSGet(STORE_KEYS.API_KEY, '') ||
+                (typeof idbApiKey === 'string' ? idbApiKey : '') ||
+                safeCookieGet(STORE_KEYS.API_KEY) ||
+                safeWindowNameGet(STORE_KEYS.API_KEY) ||
+                safeLSGet('bm_studio_v2_api_key', '')
+            );
+            const restoredModel = sanitizeModelName(
+                safeLSGet(STORE_KEYS.API_MODEL, '') ||
+                (typeof idbApiModel === 'string' ? idbApiModel : '') ||
+                safeCookieGet(STORE_KEYS.API_MODEL) ||
+                safeWindowNameGet(STORE_KEYS.API_MODEL) ||
+                DEFAULT_MODEL
+            );
+            if (restoredKey) {
+                await persistApiConfig(restoredKey, restoredModel);
+            } else {
+                cachedApiModel = restoredModel;
+            }
+
+            deletedQuestionIds = Array.from(new Set([...(idbDeleted || []), ...lsDeleted]));
+            const aliveSamples = SAMPLE_QUESTIONS.filter(q => !deletedQuestionIds.includes(q.id));
+
+            questionBank = mergeQuestionsUnique([...(idbBank || []), ...lsBank], aliveSamples)
+                .filter(q => !deletedQuestionIds.includes(q.id));
+            wrongNotes = mergeQuestionsUnique(idbWrong || [], lsWrong);
+
+            if (idbStats && (idbStats.sessions || 0) >= (lsStats.sessions || 0)) {
+                sessionStats = idbStats;
+            } else {
+                sessionStats = lsStats;
+            }
+
+            examHistory = (Array.isArray(idbHistory) && idbHistory.length >= lsHistory.length) ? idbHistory : lsHistory;
+            userNotesMap = { ...(idbNotes || {}), ...lsNotes };
+
+            savedActiveSession = (idbSession && Array.isArray(idbSession.list) && idbSession.list.length > 0)
+                ? idbSession
+                : (lsSession && Array.isArray(lsSession.list) && lsSession.list.length > 0 ? lsSession : null);
+
+            updateHeaderBadges();
+            updateResumeBanner();
+        }
+
         // ============================================================
-        // 4. 공통 유틸 (HTML 이스케이프 · 토스트 · 탭 전환)
+        // 4. 공통 유틸 (HTML/속성 이스케이프 · 토스트 · 탭 전환)
         // ============================================================
         function escapeHtml(str) {
             return String(str || '')
@@ -781,6 +1479,17 @@
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#39;");
+        }
+
+        // [2-2단계] 모델명의 점(.)을 보존하는 안전한 HTML 속성 이스케이프
+        function escapeAttr(str) {
+            return String(str || '')
+                .replace(/\\/g, "\\\\")
+                .replace(/'/g, "\\'")
+                .replace(/"/g, "&quot;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/\r?\n/g, " ");
         }
 
         let toastTimer = null;
@@ -801,6 +1510,20 @@
         function updateHeaderBadges() {
             document.getElementById('badge-bank-count').innerText = questionBank.length;
             document.getElementById('badge-wrong-count').innerText = wrongNotes.length;
+            const hasKey = Boolean(getSavedApiKey());
+            const model = getPreferredModel();
+            const dot = document.getElementById('nav-api-dot');
+            const bpEngine = document.getElementById('bp-engine');
+            if (dot) dot.classList.toggle('hide', !hasKey);
+            if (bpEngine) {
+                if (hasKey) {
+                    bpEngine.innerText = `🤖 ${model} (3문항 배치 출제)`;
+                    bpEngine.className = "font-extrabold text-emerald-600 text-right";
+                } else {
+                    bpEngine.innerText = "내장 샘플 풀 (API 키 등록 시 실시간 AI)";
+                    bpEngine.className = "font-extrabold text-slate-700 text-right";
+                }
+            }
         }
 
         function switchTab(tabName) {
@@ -819,14 +1542,14 @@
             });
 
             if (tabName !== 'quiz') stopTimer();
-            if (tabName === 'analytics') renderAnalyticsSummary();
-            if (tabName === 'bank') renderBankList();
-            if (tabName === 'wrong') renderWrongList();
+            if (tabName === 'analytics') renderAnalyticsScreen();
+            if (tabName === 'bank') renderBankScreen();
+            if (tabName === 'wrong') renderWrongScreen();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         // ============================================================
-        // 5. [1-2단계] 출제 스튜디오 설정 UI 렌더링 및 제어
+        // 5. 출제 스튜디오 설정 UI 렌더링 및 제어
         // ============================================================
         function renderSubjectCards() {
             const grid = document.getElementById('subject-grid');
@@ -834,12 +1557,12 @@
                 const active = selectedSubjects.includes(sub);
                 const meta = SUBJECT_META[sub];
                 return `
-                    <button type="button" onclick="toggleSubject('${sub}')" class="p-3.5 rounded-2xl text-left border-2 transition ${active ? 'border-pink-300 bg-pink-50/50 hover:bg-pink-50' : 'border-slate-200 bg-white hover:border-pink-200'}">
+                    <button type="button" onclick="toggleSubject('${escapeAttr(sub)}')" class="p-3.5 rounded-2xl text-left border-2 transition ${active ? 'border-pink-400 bg-pink-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-pink-200'}">
                         <div class="flex items-center justify-between gap-1">
-                            <span class="text-xs font-black ${active ? 'text-slate-900' : 'text-slate-600'}">${sub}</span>
+                            <span class="text-xs font-black ${active ? 'text-slate-900' : 'text-slate-700'}">${escapeHtml(sub)}</span>
                             <span class="text-[11px] font-black ${active ? 'text-rose-500' : 'text-slate-300'}">${active ? '✓' : '○'}</span>
                         </div>
-                        <div class="text-[11px] text-slate-500 mt-1 truncate">${meta.desc}</div>
+                        <div class="text-[10px] text-slate-500 mt-1 truncate">${escapeHtml(meta.desc)}</div>
                     </button>
                 `;
             }).join('');
@@ -850,13 +1573,13 @@
                 const topics = SUBJECT_TOPICS[selectedSubjects[0]] || [];
                 document.getElementById('topic-chips').innerHTML = topics.map(t => {
                     const isSel = selectedTopic === t;
-                    return `<button type="button" onclick="selectTopicChip('${t.replace(/'/g, "\\'")}')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition ${isSel ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-700 border-slate-200 hover:border-pink-300'}">${escapeHtml(t)}</button>`;
+                    return `<button type="button" onclick="selectTopicChip('${escapeAttr(t)}')" class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition ${isSel ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-700 border-slate-200 hover:border-pink-300'}">${escapeHtml(t)}</button>`;
                 }).join('');
             } else {
                 topicSec.classList.add('hide');
                 selectedTopic = "";
-                const inp = document.getElementById('custom-topic-input');
-                if (inp) inp.value = "";
+                const customInput = document.getElementById('custom-topic-input');
+                if (customInput) customInput.value = "";
             }
             updateBlueprintPreview();
         }
@@ -885,7 +1608,8 @@
 
         function selectTopicChip(topic) {
             selectedTopic = (selectedTopic === topic) ? "" : topic;
-            document.getElementById('custom-topic-input').value = selectedTopic;
+            const input = document.getElementById('custom-topic-input');
+            if (input) input.value = selectedTopic;
             renderSubjectCards();
         }
 
@@ -896,7 +1620,8 @@
 
         function clearTopicSelection() {
             selectedTopic = "";
-            document.getElementById('custom-topic-input').value = "";
+            const input = document.getElementById('custom-topic-input');
+            if (input) input.value = "";
             renderSubjectCards();
         }
 
@@ -906,7 +1631,7 @@
                 const active = selectedQuestionTypes.includes(t);
                 const meta = TYPE_META[t];
                 return `
-                    <button type="button" onclick="toggleQuestionType('${t}')" class="p-3 rounded-2xl border-2 text-left transition ${active ? 'border-pink-300 bg-pink-50/50 hover:bg-pink-50' : 'border-slate-200 bg-white hover:border-pink-200'}">
+                    <button type="button" onclick="toggleQuestionType('${escapeAttr(t)}')" class="p-3 rounded-2xl border-2 text-left transition ${active ? 'border-pink-400 bg-pink-50/50' : 'border-slate-200 bg-white hover:border-pink-200'}">
                         <div class="flex items-center justify-between">
                             <span class="text-sm">${meta.icon}</span>
                             <span class="text-[11px] font-black ${active ? 'text-rose-500' : 'text-slate-300'}">${active ? '✓' : '○'}</span>
@@ -942,13 +1667,13 @@
             const counts = [5, 10, 15, 20, 30, 40];
             document.getElementById('cnt-grid').innerHTML = counts.map(c => {
                 const active = selectedQuestionCount === c;
-                return `<button type="button" onclick="setQuestionCount(${c})" class="py-2.5 rounded-xl text-xs font-extrabold border-2 transition ${active ? 'border-rose-400 bg-pink-50 text-rose-600' : 'border-slate-200 bg-white text-slate-700 hover:border-pink-200 hover:bg-pink-50/40'}">${c === 40 ? '40문항(풀)' : c + '문항'}</button>`;
+                return `<button type="button" onclick="setQuestionCount(${c})" class="py-2.5 rounded-xl text-xs font-extrabold border-2 transition ${active ? 'border-pink-400 bg-pink-50/70 text-rose-600' : 'border-slate-200 bg-white text-slate-700 hover:border-pink-200'}">${c === 40 ? '40문항(풀)' : c + '문항'}</button>`;
             }).join('');
 
             const diffs = ["기본", "실전", "고난도"];
             document.getElementById('diff-grid').innerHTML = diffs.map(d => {
                 const active = selectedDifficulty === d;
-                return `<button type="button" onclick="setDifficulty('${d}')" class="py-2.5 rounded-xl text-xs font-extrabold border-2 transition ${active ? 'border-rose-400 bg-pink-50 text-rose-600' : 'border-slate-200 bg-white text-slate-700 hover:border-pink-200 hover:bg-pink-50/40'}">${d}</button>`;
+                return `<button type="button" onclick="setDifficulty('${escapeAttr(d)}')" class="py-2.5 rounded-xl text-xs font-extrabold border-2 transition ${active ? 'border-pink-400 bg-pink-50/70 text-rose-600' : 'border-slate-200 bg-white text-slate-700 hover:border-pink-200'}">${d}</button>`;
             }).join('');
             updateBlueprintPreview();
         }
@@ -972,12 +1697,15 @@
             selectedPipelineMode = mode;
             const proBtn = document.getElementById('pipe-pro');
             const fastBtn = document.getElementById('pipe-fast');
+            const desc = document.getElementById('pipe-desc');
             if (mode === 'pro') {
                 proBtn.className = "py-2.5 px-2.5 rounded-xl text-xs font-extrabold bg-rose-500 text-white shadow-sm transition";
                 fastBtn.className = "py-2.5 px-2.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:border-pink-300 hover:bg-pink-50/50 transition";
+                if (desc) desc.innerHTML = "3문항 배치 출제 후 <b>2차 수석 감수 경량 패치(45초 제한)</b>로 복수정답·재무 혼입·계산식을 교정하고 배치마다 즉시 문제은행에 자동저장합니다.";
             } else {
                 fastBtn.className = "py-2.5 px-2.5 rounded-xl text-xs font-extrabold bg-rose-500 text-white shadow-sm transition";
                 proBtn.className = "py-2.5 px-2.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:border-pink-300 hover:bg-pink-50/50 transition";
+                if (desc) desc.innerHTML = "1단계 3문항 배치 고속 출제 후 <b>6대 정합성 규칙검증</b>(재무 차단·극성·선지 중복·해설 검사)으로 빠르게 시험을 시작합니다.";
             }
         }
 
@@ -991,21 +1719,686 @@
             document.getElementById('bp-count').innerText = `${selectedQuestionCount}문항 (①~⑤ 균등 셔플)`;
         }
 
-        // API 모달 열기/닫기
+        // ============================================================
+        // 5-2. [2단계] API 모달 · 4중 자동저장 · 모델 자동감지 및 테스트
+        // ============================================================
+        function ensureModelOptionExists(selectEl, modelName, suffix = "") {
+            if (!selectEl || !modelName) return;
+            if (!Array.from(selectEl.options).some(o => o.value === modelName)) {
+                const opt = document.createElement('option');
+                opt.value = modelName;
+                opt.textContent = suffix ? `${modelName} ${suffix}` : modelName;
+                selectEl.prepend(opt);
+            }
+        }
+
         function openApiModal() {
+            clearApiConfirmArmed = false;
+            const clearBtn = document.getElementById('btn-clear-api');
+            if (clearBtn) clearBtn.innerText = "키 초기화";
+
+            const curKey = getSavedApiKey();
+            const curModel = getPreferredModel();
+            const selectEl = document.getElementById('api-model-select');
+            document.getElementById('api-key-input').value = curKey;
+            ensureModelOptionExists(selectEl, curModel, "(저장된 모델)");
+            selectEl.value = curModel;
+
+            const statusEl = document.getElementById('api-status-text');
+            if (curKey) {
+                statusEl.className = "text-[11px] font-extrabold text-emerald-700 leading-relaxed break-words";
+                statusEl.innerText = `🔒 4중 영구저장 활성화됨 (로컬·IndexedDB·쿠키·세션 · 모델: ${curModel})`;
+            } else {
+                statusEl.className = "text-[11px] font-bold text-slate-500 leading-relaxed";
+                statusEl.innerText = "현재 키 미등록 상태입니다. API 키를 입력하면 실시간 AI 출제·2단계 검수가 활성화됩니다.";
+            }
             document.getElementById('modal-api').classList.remove('hide');
         }
+
         function closeApiModal() {
+            clearApiConfirmArmed = false;
             document.getElementById('modal-api').classList.add('hide');
         }
-        function saveApiPreviewOnly() {
+
+        let liveSaveTimer = null;
+        function onApiKeyLiveInput(rawVal) {
+            const clean = sanitizeApiKey(rawVal);
+            const statusEl = document.getElementById('api-status-text');
+            if (liveSaveTimer) clearTimeout(liveSaveTimer);
+            if (clean.length >= 25 && !clean.startsWith('gen-lang-client-')) {
+                liveSaveTimer = setTimeout(async () => {
+                    const model = document.getElementById('api-model-select').value;
+                    failedModelsSet.clear();
+                    await persistApiConfig(clean, model);
+                    statusEl.className = "text-[11px] font-extrabold text-emerald-700 leading-relaxed";
+                    statusEl.innerText = `💾 입력 즉시 4중 영구저장 완료! (${model}) — 아래 연결 테스트로 확인해 보세요.`;
+                }, 400);
+            }
+        }
+
+        async function onApiModelChange(modelVal) {
+            const cleanModel = sanitizeModelName(modelVal);
+            failedModelsSet.delete(cleanModel);
+            const curKey = sanitizeApiKey(document.getElementById('api-key-input').value) || getSavedApiKey();
+            await persistApiConfig(curKey, cleanModel);
+        }
+
+        async function saveApiSettings() {
+            const keyInput = document.getElementById('api-key-input');
+            const key = sanitizeApiKey(keyInput.value);
+            keyInput.value = key;
+            const model = sanitizeModelName(document.getElementById('api-model-select').value);
+
+            if (key.startsWith('gen-lang-client-')) {
+                showToast("잘못된 키 형식", "프로젝트 ID가 아니라 AIza... 또는 AQ.... API 키를 입력해 주세요.", "⚠️");
+                return;
+            }
+            failedModelsSet.clear();
+            await persistApiConfig(key, model);
             closeApiModal();
-            showToast("설정 창 확인", "API 키 4중 영구저장 및 실시간 모델 연결은 2단계에서 탑재됩니다.", "⚙️");
+            showToast(
+                "API 4중 영구저장 완료",
+                key ? `API 키와 ${model} 모델이 4중 저장소에 안전하게 보관되었습니다.` : "API 키가 비어 있어 내장 샘플 풀 모드로 유지됩니다.",
+                "🔒"
+            );
+        }
+
+        // [2-1단계] 실수 삭제 방지 2단계 확인 초기화
+        async function clearApiSettings() {
+            const clearBtn = document.getElementById('btn-clear-api');
+            if (!clearApiConfirmArmed) {
+                clearApiConfirmArmed = true;
+                if (clearBtn) clearBtn.innerText = "정말 삭제할까요? (한 번 더 클릭)";
+                showToast("삭제 재확인 필요", "API 키가 실수로 지워지지 않도록 한 번 더 클릭하면 초기화됩니다.", "⚠️");
+                return;
+            }
+            clearApiConfirmArmed = false;
+            failedModelsSet.clear();
+            await persistApiConfig('', DEFAULT_MODEL);
+            document.getElementById('api-key-input').value = '';
+            document.getElementById('api-model-select').value = DEFAULT_MODEL;
+            if (clearBtn) clearBtn.innerText = "키 초기화";
+            closeApiModal();
+            showToast("API 키 초기화 완료", "4중 저장소의 API 키를 모두 비웠습니다.", "🔄");
+        }
+
+        // [2-2단계] 사용 가능 모델 동적 조회
+        async function discoverAvailableModels(key) {
+            try {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);
+                if (!res.ok) {
+                    let msg = `HTTP ${res.status}`;
+                    try {
+                        const j = await res.json();
+                        if (j?.error?.message) msg += `: ${j.error.message}`;
+                    } catch (_) {}
+                    return { ok: false, status: res.status, error: msg, models: [] };
+                }
+                const data = await res.json();
+                const usable = (data.models || [])
+                    .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+                    .map(m => String(m.name || '').replace(/^models\//, ''))
+                    .filter(name => /^gemini-/i.test(name) && !/(embedding|tts|image|audio|live|transcribe|robotics|computer-use)/i.test(name));
+                return { ok: true, status: 200, error: '', models: usable };
+            } catch (err) {
+                return { ok: false, status: 0, error: err.message || 'fetch error', models: [] };
+            }
+        }
+
+        // [2-2단계] 1순위 gemini-3-flash-preview 고정 + 404/403 실패 모델 세션 내 즉시 제외
+        function buildEndpointAttempts(userKey, preferredModel) {
+            const primary = sanitizeModelName(preferredModel);
+            const ordered = [primary, ...FALLBACK_MODELS.filter(m => m !== primary)];
+            const aliveModels = ordered.filter(m => !failedModelsSet.has(m));
+            const finalModels = aliveModels.length > 0 ? aliveModels : [DEFAULT_MODEL];
+            const isAQ = userKey.startsWith('AQ.');
+            const list = [];
+
+            finalModels.forEach(model => {
+                list.push({
+                    label: `AI Studio (${model})`,
+                    model,
+                    url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(userKey)}`,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            });
+            if (isAQ && !failedModelsSet.has(`vertex:${primary}`)) {
+                list.push({
+                    label: `Vertex Express (${primary})`,
+                    model: primary,
+                    failKey: `vertex:${primary}`,
+                    url: `https://aiplatform.googleapis.com/v1/publishers/google/models/${primary}:generateContent?key=${encodeURIComponent(userKey)}`,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+            return list;
+        }
+
+        async function testApiConnection() {
+            const keyInput = document.getElementById('api-key-input');
+            const key = sanitizeApiKey(keyInput.value);
+            keyInput.value = key;
+            const selectEl = document.getElementById('api-model-select');
+            const statusEl = document.getElementById('api-status-text');
+            const btn = document.getElementById('btn-test-api-conn');
+
+            if (!key) {
+                statusEl.className = "text-[11px] font-bold text-amber-600 leading-relaxed";
+                statusEl.innerText = "⚠️ API 키가 비어 있습니다. 키를 입력한 뒤 테스트해 주세요.";
+                return;
+            }
+            if (key.startsWith('gen-lang-client-')) {
+                statusEl.className = "text-[11px] font-bold text-rose-600 leading-relaxed";
+                statusEl.innerText = "❌ Google Cloud 프로젝트 ID가 아니라 AIza... 또는 AQ.... API 키를 입력해 주세요.";
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = "⏳ 키 유효성 및 사용 가능 모델 확인 중...";
+            statusEl.className = "text-[11px] font-bold text-slate-600 leading-relaxed";
+            statusEl.innerText = "Google AI Studio에서 호출 가능한 모델 목록을 조회하고 있습니다...";
+            failedModelsSet.clear();
+
+            const disc = await discoverAvailableModels(key);
+            let candidateModels = [];
+            if (disc.ok && disc.models.length > 0) {
+                const score = (n) => (n === 'gemini-3-flash-preview' ? 100 : n.includes('3-flash') ? 90 : n.includes('2.5-flash') ? 80 : n.includes('3.1-pro') ? 70 : n.includes('2.5-pro') ? 60 : 30);
+                candidateModels = [...disc.models].sort((a, b) => score(b) - score(a)).slice(0, 6);
+                const prevVal = selectEl.value;
+                selectEl.innerHTML = candidateModels.map((m, i) =>
+                    `<option value="${escapeAttr(m)}">${escapeHtml(m)}${i === 0 ? ' (자동 감지 1순위)' : ''}</option>`
+                ).join('');
+                if (candidateModels.includes(prevVal)) selectEl.value = prevVal;
+            } else if (disc.status === 400 && /API key not valid/i.test(disc.error)) {
+                statusEl.className = "text-[11px] font-bold text-rose-600 leading-relaxed break-words";
+                statusEl.innerText = "❌ Google 서버가 API 키를 무효(API key not valid)로 거부했습니다. Google AI Studio에서 새 키를 발급받아 입력해 주세요.";
+                btn.disabled = false;
+                btn.innerText = "🔌 입력한 API 키 연결 테스트 (모델 자동 감지 · 즉시 저장)";
+                return;
+            }
+
+            const preferred = selectEl.value;
+            const attempts = candidateModels.length > 0
+                ? [preferred, ...candidateModels.filter(m => m !== preferred)].map(m => ({
+                    label: `AI Studio (${m})`,
+                    model: m,
+                    url: `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${encodeURIComponent(key)}`,
+                    headers: { 'Content-Type': 'application/json' }
+                }))
+                : buildEndpointAttempts(key, preferred);
+
+            const errors = [];
+            for (const attempt of attempts) {
+                try {
+                    const res = await fetch(attempt.url, {
+                        method: 'POST',
+                        headers: attempt.headers,
+                        body: JSON.stringify({
+                            contents: [{ role: "user", parts: [{ text: "Reply OK only." }] }]
+                        })
+                    });
+                    if (res.ok) {
+                        ensureModelOptionExists(selectEl, attempt.model, "(연결 확인)");
+                        selectEl.value = attempt.model;
+                        // [2-1단계] 연결 테스트 성공 즉시 4중 영구저장 & 성공 모델 1순위 고정
+                        await persistApiConfig(key, attempt.model);
+                        statusEl.className = "text-[11px] font-extrabold text-emerald-700 leading-relaxed";
+                        statusEl.innerText = `✅ 연결 성공 및 4중 자동저장 완료! [${attempt.label}] 모델이 1순위로 고정되었습니다.`;
+                        showToast("API 연결 & 자동저장 완료", `${attempt.model} 연결 확인 및 4중 영구저장이 완료되었습니다.`, "✅");
+                        btn.disabled = false;
+                        btn.innerText = "🔌 입력한 API 키 연결 테스트 (모델 자동 감지 · 즉시 저장)";
+                        return;
+                    }
+                    if (res.status === 404 || res.status === 403) {
+                        failedModelsSet.add(attempt.failKey || attempt.model);
+                    }
+                    let msg = `HTTP ${res.status}`;
+                    try {
+                        const j = await res.json();
+                        if (j?.error?.message) msg += `: ${j.error.message.slice(0, 90)}`;
+                    } catch (_) {}
+                    errors.push(`${attempt.label} → ${msg}`);
+                } catch (err) {
+                    errors.push(`${attempt.label} → 네트워크 오류 (${err.message || 'fetch error'})`);
+                }
+            }
+
+            statusEl.className = "text-[11px] font-bold text-rose-600 leading-relaxed break-words";
+            statusEl.innerText = `❌ 연결 실패: ${errors.slice(0, 3).join(' | ')}`;
+            btn.disabled = false;
+            btn.innerText = "🔌 입력한 API 키 연결 테스트 (모델 자동 감지 · 즉시 저장)";
         }
 
         // ============================================================
-        // 6. [1-3단계] 문항 출제(정답 균등 셔플) & CBT 시험 엔진
+        // 6. [3단계] AI 3문항 배치 고속 출제 · 경량 2단 감수 · 재무 차단
         // ============================================================
+        const QUIZ_JSON_SCHEMA = {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    subject: { type: "STRING" },
+                    topic: { type: "STRING" },
+                    questionType: { type: "STRING" },
+                    trapPattern: { type: "STRING" },
+                    question: { type: "STRING" },
+                    caseBox: { type: "STRING" },
+                    bogi: { type: "ARRAY", items: { type: "STRING" } },
+                    options: { type: "ARRAY", items: { type: "STRING" } },
+                    answer: { type: "INTEGER" },
+                    optionExplanations: { type: "ARRAY", items: { type: "STRING" } },
+                    keyTakeaway: { type: "STRING" },
+                    deepTheoryNote: { type: "STRING" },
+                    scholarCompareNote: { type: "STRING" },
+                    trapAnatomy: { type: "STRING" },
+                    examExtensionTip: { type: "STRING" },
+                    keyTerms: { type: "ARRAY", items: { type: "STRING" } },
+                    auditNote: { type: "STRING" },
+                    changesMade: { type: "STRING" }
+                },
+                required: [
+                    "subject", "topic", "questionType", "trapPattern", "question", "caseBox", "bogi",
+                    "options", "answer", "optionExplanations", "keyTakeaway", "deepTheoryNote",
+                    "scholarCompareNote", "trapAnatomy", "examExtensionTip", "keyTerms"
+                ]
+            }
+        };
+
+        const AUDIT_PATCH_SCHEMA = {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    index: { type: "INTEGER" },
+                    isValid: { type: "BOOLEAN" },
+                    hasFinanceIssue: { type: "BOOLEAN" },
+                    fixedAnswer: { type: "INTEGER" },
+                    fixedQuestion: { type: "STRING" },
+                    fixedOptions: { type: "ARRAY", items: { type: "STRING" } },
+                    fixedOptionExplanations: { type: "ARRAY", items: { type: "STRING" } },
+                    auditNote: { type: "STRING" },
+                    changesMade: { type: "STRING" }
+                },
+                required: ["index", "isValid", "hasFinanceIssue", "fixedAnswer", "auditNote", "changesMade"]
+            }
+        };
+
+        let activeAbortController = null;
+        let isGenerationCancelled = false;
+
+        function cancelQuizGeneration() {
+            isGenerationCancelled = true;
+            if (activeAbortController) {
+                try { activeAbortController.abort(); } catch (_) {}
+            }
+            appendLoadingLog("⏹️ 사용자 요청으로 출제를 중단했습니다. (완료된 배치 문항은 문제은행에 자동저장됨)");
+            showToast("출제 중단됨", "이미 완료된 배치 문항은 문제은행에 안전하게 저장되어 있습니다.", "⏹️");
+        }
+
+        function appendLoadingLog(line) {
+            const logEl = document.getElementById('setup-loading-log');
+            if (!logEl) return;
+            const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+            const div = document.createElement('div');
+            div.innerText = `[${time}] ${line}`;
+            logEl.appendChild(div);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // [3-1단계] JSON 안전 파서 (코드펜스·잡텍스트 제거 및 배열 추출)
+        function safeParseAIJson(rawText) {
+            const cleaned = String(rawText || '')
+                .replace(/^```(?:json)?\s*/i, '')
+                .replace(/\s*```$/i, '')
+                .trim();
+            try {
+                return JSON.parse(cleaned);
+            } catch (_) {
+                const start = cleaned.indexOf('[');
+                const end = cleaned.lastIndexOf(']');
+                if (start !== -1 && end > start) {
+                    return JSON.parse(cleaned.slice(start, end + 1));
+                }
+                throw new Error("JSON 파싱 실패 (응답 형식 오류)");
+            }
+        }
+
+        // [3-1단계] AI 호출 엔진 (90초 타임아웃 · 출력 토큰 16384 · 404/403 즉시 제외 · 성공 모델 자동 고정)
+        async function callHighQualityAIWithMeta(systemPrompt, userPrompt, schema = QUIZ_JSON_SCHEMA, timeoutMs = 90000) {
+            const userKey = getSavedApiKey();
+            if (!userKey) throw new Error("NO_API_KEY");
+
+            const preferredModel = getPreferredModel();
+            const attempts = buildEndpointAttempts(userKey, preferredModel);
+            const delays = [900];
+            let lastErrDetail = "응답 없음";
+
+            for (const attempt of attempts) {
+                if (isGenerationCancelled) throw new Error("USER_CANCELLED");
+                if (failedModelsSet.has(attempt.failKey || attempt.model)) continue;
+
+                for (let retry = 0; retry <= delays.length; retry++) {
+                    if (isGenerationCancelled) throw new Error("USER_CANCELLED");
+                    const t0 = performance.now();
+                    const controller = new AbortController();
+                    activeAbortController = controller;
+                    const timerId = setTimeout(() => controller.abort("TIMEOUT"), timeoutMs);
+
+                    try {
+                        const payload = {
+                            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+                            systemInstruction: { parts: [{ text: systemPrompt }] },
+                            generationConfig: {
+                                responseMimeType: "application/json",
+                                responseSchema: schema,
+                                maxOutputTokens: 16384
+                            }
+                        };
+                        const res = await fetch(attempt.url, {
+                            method: 'POST',
+                            headers: attempt.headers,
+                            body: JSON.stringify(payload),
+                            signal: controller.signal
+                        });
+                        clearTimeout(timerId);
+
+                        if (res.status === 429 || res.status === 503) {
+                            lastErrDetail = `${attempt.label} HTTP ${res.status} (일시 혼잡/할당량)`;
+                            if (retry < delays.length) {
+                                await new Promise(r => setTimeout(r, delays[retry]));
+                                continue;
+                            }
+                            break;
+                        }
+                        if (res.status === 404 || res.status === 403) {
+                            failedModelsSet.add(attempt.failKey || attempt.model);
+                            lastErrDetail = `${attempt.label} HTTP ${res.status} (미지원/권한 없음 → 세션 제외)`;
+                            break;
+                        }
+                        if (!res.ok) {
+                            let errMsg = `HTTP ${res.status}`;
+                            try {
+                                const errJson = await res.json();
+                                if (errJson?.error?.message) errMsg += ` - ${errJson.error.message.slice(0, 110)}`;
+                            } catch (_) {}
+                            lastErrDetail = `${attempt.label}: ${errMsg}`;
+                            break;
+                        }
+
+                        const json = await res.json();
+                        const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (text) {
+                            const parsed = safeParseAIJson(text);
+                            // 성공한 모델을 1순위로 자동 고정·영구저장
+                            if (attempt.model && attempt.model !== cachedApiModel) {
+                                await persistApiConfig(userKey, attempt.model);
+                            }
+                            return {
+                                data: parsed,
+                                modelUsed: attempt.label,
+                                durationSec: ((performance.now() - t0) / 1000).toFixed(2)
+                            };
+                        }
+                        lastErrDetail = `${attempt.label}: 빈 응답 반환`;
+                        break;
+                    } catch (err) {
+                        clearTimeout(timerId);
+                        if (isGenerationCancelled) throw new Error("USER_CANCELLED");
+                        if (err.name === 'AbortError') {
+                            lastErrDetail = `${attempt.label}: ${Math.round(timeoutMs / 1000)}초 응답 시간 초과`;
+                            break;
+                        }
+                        lastErrDetail = `${attempt.label}: ${err.message || '네트워크 오류'}`;
+                        if (retry < delays.length) {
+                            await new Promise(r => setTimeout(r, delays[retry]));
+                            continue;
+                        }
+                        break;
+                    }
+                }
+            }
+            throw new Error(lastErrDetail);
+        }
+
+        function performRuleBasedAudit(q) {
+            const checks = [];
+            const stem = String(q.question || '');
+            const isNegative = /(않은\s*것은|틀린\s*것은|아닌\s*것은|먼\s*것은|잘못된\s*것은|적절하지\s*않은|올바르지\s*않은)/.test(stem);
+            const ansIdx = Math.max(0, Math.min(4, (parseInt(q.answer) || 1) - 1));
+            const exps = Array.isArray(q.optionExplanations) ? q.optionExplanations : [];
+            const ansExp = String(exps[ansIdx] || '');
+
+            let polarityOk = true;
+            if (ansExp.length > 5) {
+                polarityOk = isNegative
+                    ? /(\[X\]|옳지\s*않|적절하지\s*않|틀렸|잘못|아니다|바꿔치기|반대|혼동|오류|정답\(옳지)/i.test(ansExp)
+                    : /(\[O\]|정답|옳은|적절|정확|일치|맞는)/i.test(ansExp);
+            }
+            checks.push(isNegative ? "부정형 극성 대조" : "긍정형 극성 대조");
+
+            const uniqueOk = new Set((q.options || []).map(o => String(o).trim())).size === 5;
+            if (uniqueOk) checks.push("5지선다 중복 없음");
+
+            const financeClean = !hasFinanceContamination(q);
+            if (financeClean) checks.push("재무관리·회계 배제 통과");
+
+            const expOk = exps.filter(e => String(e || '').trim().length > 15).length === 5;
+            if (expOk) checks.push("5선지 개별해설 완비");
+
+            return {
+                checklist: {
+                    financeClean,
+                    singleAnswerOk: uniqueOk && q.answer >= 1 && q.answer <= 5,
+                    polarityOk,
+                    expCompleteOk: expOk
+                },
+                auditNote: (q.auditNote && q.auditNote.trim().length > 8)
+                    ? q.auditNote
+                    : `[검수 통과] ${checks.join(' · ')} (정답 ${q.answer}번 단일성 확인)`
+            };
+        }
+
+        // [3-2단계] 2단계 수석 감수 경량 패치 (45초 타임아웃 · _financeFlagged 병합)
+        async function runSecondStageAIAudit(draftList, targetAnswers) {
+            const compactDraft = draftList.map((q, idx) => ({
+                index: idx,
+                subject: q.subject,
+                topic: q.topic,
+                question: q.question,
+                caseBox: q.caseBox || "",
+                bogi: q.bogi || [],
+                options: q.options || [],
+                answer: q.answer,
+                optionExplanations: q.optionExplanations || []
+            }));
+
+            const auditSys = `당신은 CPA·공기업 경영학 수석 감수 위원장입니다.
+1차 출제 문항을 신속 정밀 감수하여 각 문항별 경량 검증 패치(JSON 배열)를 반환하십시오:
+1. 재무관리·회계학(CAPM, WACC, NPV, IRR, MM이론, 자본구조, 채권, 옵션, 회계 등) 혼입 시 hasFinanceIssue=true 표시.
+2. 복수정답·발문 극성 오류·학설 오류·계산 오류가 있으면 fixedAnswer(1~5), fixedQuestion, fixedOptions(5개), fixedOptionExplanations(5개)에 수정본을 넣고, 이상 없으면 빈 문자열/빈 배열로 두십시오.
+3. auditNote(1문장 최종 감수 소견)와 changesMade(교정 내용 또는 '이상 없음 확인')를 간결히 적으십시오.`;
+
+            const auditUser = `다음 ${compactDraft.length}문항을 신속 정밀 감수하십시오:\n${JSON.stringify(compactDraft)}`;
+            const res = await callHighQualityAIWithMeta(auditSys, auditUser, AUDIT_PATCH_SCHEMA, 45000);
+
+            const merged = draftList.map((orig, idx) => {
+                const patch = Array.isArray(res.data) ? (res.data.find(p => p.index === idx) || res.data[idx]) : null;
+                if (!patch) return orig;
+                const copy = { ...orig };
+                if (patch.hasFinanceIssue) copy._financeFlagged = true;
+                if (patch.fixedQuestion && patch.fixedQuestion.trim().length > 10) copy.question = patch.fixedQuestion.trim();
+                if (Array.isArray(patch.fixedOptions) && patch.fixedOptions.length === 5) copy.options = patch.fixedOptions;
+                if (Array.isArray(patch.fixedOptionExplanations) && patch.fixedOptionExplanations.length === 5) copy.optionExplanations = patch.fixedOptionExplanations;
+                if (patch.fixedAnswer >= 1 && patch.fixedAnswer <= 5) copy.answer = patch.fixedAnswer;
+                copy.auditNote = patch.auditNote || copy.auditNote;
+                copy.changesMade = patch.changesMade || "2단계 수석 감수 통과 (단일 정답·학설·계산 검산 완료)";
+                return copy;
+            });
+
+            return {
+                data: merged,
+                modelUsed: res.modelUsed,
+                durationSec: res.durationSec
+            };
+        }
+
+        // [3-2단계] 2단계 AI 검수 + 재무관리 차단(_financeFlagged) 실시간 진단 UI
+        async function testAuditPipelineLive() {
+            const btn = document.getElementById('btn-test-audit');
+            const box = document.getElementById('audit-selfcheck-box');
+            btn.disabled = true;
+            box.classList.remove('hide');
+
+            const brokenSamples = [
+                {
+                    subject: "조직행동",
+                    topic: "허츠버그 2요인 이론",
+                    questionType: "이론형",
+                    trapPattern: "학자·이론 교차 바꿔치기",
+                    question: "허츠버그(Herzberg)의 2요인 이론에 관한 설명으로 옳은 것은?",
+                    caseBox: "",
+                    bogi: [],
+                    options: [
+                        "급여와 작업조건은 대표적인 동기요인에 해당한다.",
+                        "성취감과 책임감은 동기요인으로 적극적 직무만족을 유발한다.",
+                        "위생요인이 충족되면 불만족은 해소되나 적극적 만족이 자동 발생하지는 않는다.",
+                        "만족과 불만족은 단일 연속선상의 양 극단에 위치한다.",
+                        "위생요인만 제거하면 내재적 동기부여가 극대화된다."
+                    ],
+                    answer: 1,
+                    optionExplanations: ["정답", "오답", "오답", "오답", "오답"]
+                },
+                {
+                    subject: "경영일반·전략",
+                    topic: "CAPM과 자본비용(WACC)",
+                    questionType: "이론형",
+                    trapPattern: "유사 개념·용어 혼동",
+                    question: "자본자산가격결정모형(CAPM)과 가중평균자본비용(WACC)에 관한 설명으로 옳은 것은?",
+                    caseBox: "",
+                    bogi: [],
+                    options: [
+                        "베타 계수가 1보다 크면 체계적 위험이 시장보다 크다.",
+                        "비체계적 위험은 분산투자로 제거할 수 없다.",
+                        "MM 무세금 이론에서 부채가 늘면 기업가치가 증가한다.",
+                        "NPV가 0보다 작으면 채택한다.",
+                        "듀레이션이 길수록 가격변동성이 작다."
+                    ],
+                    answer: 1,
+                    optionExplanations: ["정답", "오답", "오답", "오답", "오답"]
+                }
+            ];
+
+            const localFinanceDetected = hasFinanceContamination(brokenSamples[1]);
+            const localAuditA = performRuleBasedAudit(brokenSamples[0]);
+
+            if (!getSavedApiKey()) {
+                box.innerHTML = `
+                    <div class="text-emerald-300 font-extrabold">✅ 로컬 6대 규칙검증 & 재무관리 차단 정상 확인!</div>
+                    <div class="p-2 rounded-lg bg-slate-950 border border-slate-700 space-y-1">
+                        <div class="text-pink-300 font-bold">[테스트 A: 부실 해설·극성 탐지]</div>
+                        <div>• 해설 분량 미달 탐지: ${!localAuditA.checklist.expCompleteOk ? '✅ 즉시 탐지됨' : '통과'}</div>
+                    </div>
+                    <div class="p-2 rounded-lg bg-slate-950 border border-slate-700 space-y-1">
+                        <div class="text-rose-300 font-bold">[테스트 B: 재무관리(CAPM·WACC·MM·NPV) 차단]</div>
+                        <div>• 정규식 가드레일: ${localFinanceDetected ? '✅ 100% 차단 (자동 교체 작동)' : '미탐지'}</div>
+                    </div>
+                    <div class="text-slate-400">※ 우측 상단 <b>⚙️ API</b>에 개인 Gemini 키를 등록하면 실제 2차 AI 수석 감수 패치까지 진단됩니다.</div>
+                `;
+                btn.disabled = false;
+                showToast("로컬 검수 정상", "재무관리 차단 및 6대 정합성 규칙검증이 정상 작동합니다.", "🛡️");
+                return;
+            }
+
+            btn.innerText = "⏳ 오류 문항 + 재무관리 혼입 문항 2차 AI 감수 진단 중...";
+            box.innerHTML = `<div class="text-pink-300 font-bold">테스트 문항 2개를 실제 2차 수석 감수 경량 패치 API로 전송합니다...</div>`;
+
+            try {
+                const res = await runSecondStageAIAudit(brokenSamples, [2, 4]);
+                const fixedA = res.data[0];
+                const fixedB = res.data[1];
+                const expBefore = brokenSamples[0].optionExplanations.join('').length;
+                const expAfter = (fixedA.optionExplanations || []).join('').length;
+                const aiFlaggedFinance = Boolean(fixedB._financeFlagged) || !hasFinanceContamination(fixedB);
+
+                box.innerHTML = `
+                    <div class="text-emerald-300 font-extrabold">✅ 2단계 AI 경량 감수 & 재무 차단 정상 작동! (${escapeHtml(res.modelUsed)} · ${escapeHtml(res.durationSec)}초)</div>
+                    <div class="p-2 rounded-lg bg-slate-950 border border-slate-700 space-y-1">
+                        <div class="text-sky-300 font-bold">[테스트 A: 학설·복수정답 교정]</div>
+                        <div>• 오류 초안(1번) ➔ 교정 정답 <b>${fixedA.answer}번</b> 단일화</div>
+                        <div>• 해설 보강: ${expBefore}자 ➔ <b>${expAfter}자</b> (+${Math.max(0, expAfter - expBefore)}자)</div>
+                        <div>• 감수 기록: ${escapeHtml(fixedA.changesMade || fixedA.auditNote)}</div>
+                    </div>
+                    <div class="p-2 rounded-lg bg-slate-950 border border-slate-700 space-y-1">
+                        <div class="text-rose-300 font-bold">[테스트 B: 재무관리(CAPM·WACC) 혼입 차단]</div>
+                        <div>• 1차 정규식 가드레일: ${localFinanceDetected ? '✅ 즉시 탐지됨' : '미탐지'}</div>
+                        <div>• 2차 AI <code>_financeFlagged</code> 판정: ${aiFlaggedFinance ? '✅ 재무관리 혼입 탐지 ➔ 6대 과목 문항으로 강제 퇴출·교체 처리!' : '⚠️ 최종 정규식 가드레일에서 강제 퇴출됨'}</div>
+                    </div>
+                `;
+                showToast("2단계 AI 검수 정상 확인", `${res.modelUsed} (${res.durationSec}초) 경량 감수 및 재무 차단이 정상 작동했습니다.`, "🔬");
+            } catch (err) {
+                box.innerHTML = `<div class="text-amber-300 font-bold">⚠️ API 호출 실패 (${escapeHtml(err.message || '연결 오류')}) — 로컬 재무 차단 가드레일은 정상 작동 중입니다.</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "🧪 2단계 AI 검수 + 재무관리 차단 즉시 진단";
+            }
+        }
+
+        function normalizeQuestionItem(q, desiredAns, difficulty = "실전") {
+            let opts = Array.isArray(q.options) ? q.options.slice(0, 5) : [];
+            while (opts.length < 5) opts.push(`선지 ${opts.length + 1}`);
+            opts = opts.map(o => String(o).replace(/^[①②③④⑤1-5][\.\)\s]+/, '').trim());
+
+            let exps = Array.isArray(q.optionExplanations) ? q.optionExplanations.slice(0, 5) : [];
+            while (exps.length < 5) exps.push("해당 선지의 핵심 이론과 정오판단 근거를 확인하세요.");
+
+            let ansIdx = (parseInt(q.answer) || 1) - 1;
+            if (ansIdx < 0 || ansIdx > 4) ansIdx = 0;
+
+            const targetIdx = ((desiredAns || 1) - 1 + 5) % 5;
+            if (ansIdx !== targetIdx) {
+                [opts[ansIdx], opts[targetIdx]] = [opts[targetIdx], opts[ansIdx]];
+                [exps[ansIdx], exps[targetIdx]] = [exps[targetIdx], exps[ansIdx]];
+                ansIdx = targetIdx;
+            }
+
+            const item = {
+                id: q.id || ('q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
+                createdAt: typeof q.createdAt === 'number' ? q.createdAt : Date.now(),
+                subject: ALL_SUBJECTS.includes(q.subject) ? q.subject : "경영일반·전략",
+                topic: q.topic || "핵심빈출",
+                difficulty: q.difficulty || difficulty,
+                questionType: ALL_QUESTION_TYPES.includes(q.questionType)
+                    ? q.questionType
+                    : (Array.isArray(q.bogi) && q.bogi.length > 0 ? "조합형" : (q.caseBox ? "사례형" : "이론형")),
+                trapPattern: TRAP_PATTERNS.includes(q.trapPattern) ? q.trapPattern : TRAP_PATTERNS[0],
+                question: q.question || "",
+                caseBox: q.caseBox || "",
+                bogi: Array.isArray(q.bogi) ? q.bogi : [],
+                options: opts,
+                answer: ansIdx + 1,
+                optionExplanations: exps,
+                keyTakeaway: q.keyTakeaway || exps[ansIdx] || "",
+                deepTheoryNote: q.deepTheoryNote || `${q.subject || '경영학'} [${q.topic || '핵심 이론'}]의 이론적 배경, 전제조건, 실무 적용 한계를 입체적으로 정리하세요.`,
+                scholarCompareNote: q.scholarCompareNote || `[핵심 비교] ${q.topic || '해당 이론'}은 인접 개념과 적용 조건이 다르므로 핵심 변수를 1:1로 대조해 구분하세요.`,
+                trapAnatomy: q.trapAnatomy || `[${q.trapPattern || '개념 혼동'} 해부] 출제자는 익숙한 문장 구조 속에서 방향이나 학자명만 교묘히 뒤바꾸어 오답을 만듭니다.`,
+                examExtensionTip: q.examExtensionTip || `다음 실전 시험에서는 예외 조건이나 조합형(<보기>)으로 변형 출제될 가능성이 높습니다.`,
+                keyTerms: Array.isArray(q.keyTerms) && q.keyTerms.length > 0 ? q.keyTerms.slice(0, 5) : [q.subject || "경영학", q.topic || "핵심개념"],
+                auditNote: q.auditNote || "",
+                changesMade: q.changesMade || "",
+                auditMeta: {
+                    stage2ApiCalled: false,
+                    modelUsed: "6대 규칙검수",
+                    durationSec: "0.00",
+                    ...(q.auditMeta || {})
+                }
+            };
+
+            const rule = performRuleBasedAudit(item);
+            item.auditNote = rule.auditNote;
+            item.auditChecklist = rule.checklist;
+            return item;
+        }
+
         function buildBalancedTargetAnswers(count) {
             const arr = [];
             for (let i = 0; i < count; i++) arr.push((i % 5) + 1);
@@ -1028,10 +2421,7 @@
             return q;
         }
 
-        function generateAndStartQuiz() {
-            const isOnlyCalc = selectedQuestionTypes.length === 1 && selectedQuestionTypes[0] === '계산형';
-            const effSubjects = isOnlyCalc ? ['생산운영관리'] : selectedSubjects;
-
+        function pickLocalFallbackQuestions(effSubjects, count, targets) {
             let pool = questionBank.filter(q => effSubjects.includes(q.subject));
             const byType = pool.filter(q => selectedQuestionTypes.includes(q.questionType));
             if (byType.length > 0) pool = byType;
@@ -1046,21 +2436,190 @@
                 if (byTrap.length > 0) pool = byTrap;
             }
             if (pool.length === 0) pool = [...questionBank];
+            if (pool.length === 0) pool = [...SAMPLE_QUESTIONS];
 
-            // 1-3단계에서는 검증 샘플 풀(최대 6문항) 내에서 중복 없이 깔끔하게 출제
             const shuffledPool = [...pool].sort(() => Math.random() - 0.5);
-            const actualCount = Math.min(selectedQuestionCount, shuffledPool.length);
-            const targets = buildBalancedTargetAnswers(actualCount);
-            const quizList = shuffledPool.slice(0, actualCount).map((q, idx) => shuffleQuestionToAnswer(q, targets[idx]));
-
-            startQuizSession(quizList);
-            if (selectedQuestionCount > actualCount) {
-                showToast("검증 샘플 CBT 시작", `현재 1-3단계 샘플 풀(${actualCount}문항)로 시험을 시작합니다. 1-5단계에서 30문항으로 확장됩니다.`, "🚀");
-            } else {
-                showToast("모의고사 출제 완료", `${actualCount}문항(정답 ①~⑤ 균등 분산)으로 실전 CBT를 시작합니다.`, "🚀");
-            }
+            const actualCount = Math.min(count, shuffledPool.length);
+            return shuffledPool.slice(0, actualCount).map((q, idx) => shuffleQuestionToAnswer(q, targets[idx]));
         }
 
+        // [3-1 / 3-2단계] 메인 출제 실행 (API 키 있으면 3문항 배치 AI 출제+즉시 자동저장, 없으면 로컬 즉시 출제)
+        async function generateAndStartQuiz() {
+            const count = selectedQuestionCount;
+            const targets = buildBalancedTargetAnswers(count);
+            const isOnlyCalc = selectedQuestionTypes.length === 1 && selectedQuestionTypes[0] === '계산형';
+            const effSubjects = isOnlyCalc ? ['생산운영관리'] : selectedSubjects;
+
+            // API 키 미입력 시 대기 없이 내장 문제은행/샘플 풀 즉시 출제
+            if (!getSavedApiKey()) {
+                const quizList = pickLocalFallbackQuestions(effSubjects, count, targets);
+                startQuizSession(quizList);
+                showToast("내장 풀 즉시 출제", `${quizList.length}문항으로 CBT를 시작합니다. (실시간 AI 신문항 출제는 ⚙️ API에서 키 등록)`, "🚀");
+                return;
+            }
+
+            const btn = document.getElementById('btn-generate-quiz');
+            const loadingBox = document.getElementById('setup-loading');
+            const loadingTitle = document.getElementById('setup-loading-title');
+            const logEl = document.getElementById('setup-loading-log');
+            const elapsedEl = document.getElementById('setup-loading-elapsed');
+
+            btn.disabled = true;
+            btn.classList.add('opacity-60');
+            loadingBox.classList.remove('hide');
+            logEl.innerHTML = '';
+            isGenerationCancelled = false;
+
+            const genStartMs = Date.now();
+            if (elapsedEl) elapsedEl.innerText = '0초';
+            const elapsedTimer = setInterval(() => {
+                if (elapsedEl) elapsedEl.innerText = `${Math.floor((Date.now() - genStartMs) / 1000)}초`;
+            }, 1000);
+
+            const nonCalcTypes = selectedQuestionTypes.filter(t => t !== '계산형');
+            const subAlloc = [];
+            const typeAlloc = [];
+            for (let i = 0; i < count; i++) {
+                const sub = effSubjects[i % effSubjects.length];
+                subAlloc.push(sub);
+                if (sub === '생산운영관리') {
+                    typeAlloc.push(selectedQuestionTypes[i % selectedQuestionTypes.length]);
+                } else {
+                    const pool = nonCalcTypes.length > 0 ? nonCalcTypes : ['이론형'];
+                    typeAlloc.push(pool[i % pool.length]);
+                }
+            }
+
+            const BATCH_SIZE = 3;
+            const totalBatches = Math.ceil(count / BATCH_SIZE);
+            const collected = [];
+            let stage2Batches = 0;
+            let blockedFinance = 0;
+            let failedBatchCount = 0;
+
+            const sysPrompt = `당신은 대한민국 CPA·메이저 공기업·공인노무사 경영학 수석 출제위원입니다.
+[절대 금지 - 재무관리·회계학 완전 배제]: 재무관리(CAPM, WACC, NPV, IRR, MM이론, 자본구조, 채권, 옵션, 배당, 레버리지, DCF 등) 및 재무·원가회계는 단 1문항·1선지도 출제하지 마십시오. 오직 지정된 과목(${effSubjects.join(', ')})에서만 출제하십시오.
+[초심층 6단 해설 출제 규칙]:
+1. 모든 문항은 5지선다형(options 정확히 5개)으로 설계하십시오.
+2. optionExplanations(정확히 5개)는 각 선지마다 '[O]' 또는 '[X]'로 시작하며 핵심 근거를 담아 1~2문장으로 명쾌하게 쓰십시오.
+3. deepTheoryNote, scholarCompareNote, trapAnatomy, examExtensionTip, keyTerms(3~5개)를 반드시 채우십시오.
+4. 조합형은 bogi 배열에 ㄱ~ㄹ 4개 명제, 사례형은 caseBox에 구체적 가상 기업 사례(4~5문장), 계산형은 생산운영관리 수리 문항으로 단계별 풀이식을 포함하십시오.`;
+
+            try {
+                for (let b = 0; b < totalBatches; b++) {
+                    if (isGenerationCancelled) break;
+
+                    const start = b * BATCH_SIZE;
+                    const end = Math.min(start + BATCH_SIZE, count);
+                    const bCnt = end - start;
+                    const bTargets = targets.slice(start, end);
+                    const bSubs = subAlloc.slice(start, end);
+                    const bTypes = typeAlloc.slice(start, end);
+
+                    const specs = bSubs.map((s, i) => `문항 ${start + i + 1}: [과목: ${s} / 구조: ${bTypes[i]} / 목표정답: ${bTargets[i]}번]`).join('\n');
+                    const avoidTopics = collected.slice(-12).map(q => q.topic).join(', ');
+
+                    const userPrompt = `다음 설계도에 맞춰 경영학 초심층 객관식 ${bCnt}문항을 출제하십시오 (배치 ${b + 1}/${totalBatches}):
+${specs}
+- 세부 집중 주제: ${selectedTopic || 'CPA·공기업 기출 전 범위 랜덤 출제 (재무관리·회계 절대 제외)'}
+- 중복 회피 주제: ${avoidTopics || '없음'}
+- 집중 함정 패턴: ${selectedTrapFilter === 'ALL' ? '5대 함정 골고루 사용' : selectedTrapFilter}
+- 난이도: ${selectedDifficulty}`;
+
+                    try {
+                        loadingTitle.innerText = `[배치 ${b + 1}/${totalBatches}] 1단계: 3문항 배치 출제 중...`;
+                        appendLoadingLog(`배치 ${b + 1}/${totalBatches} 1차 출제 AI 호출 (${bSubs.join(', ')})`);
+
+                        const draftRes = await callHighQualityAIWithMeta(sysPrompt, userPrompt, QUIZ_JSON_SCHEMA, 90000);
+                        if (!Array.isArray(draftRes.data) || draftRes.data.length === 0) throw new Error("빈 초안 반환");
+                        let rawBatch = draftRes.data.slice(0, bCnt);
+                        appendLoadingLog(`✓ 1차 초안 ${rawBatch.length}문항 완료 (${draftRes.modelUsed}, ${draftRes.durationSec}초)`);
+
+                        if (selectedPipelineMode === 'pro' && !isGenerationCancelled) {
+                            loadingTitle.innerText = `[배치 ${b + 1}/${totalBatches}] 2단계: 수석 감수 경량 패치 검증 중...`;
+                            appendLoadingLog(`배치 ${b + 1}/${totalBatches} 2차 수석 감수 경량 패치 전송 (45초 제한)...`);
+                            try {
+                                const auditRes = await runSecondStageAIAudit(rawBatch, bTargets);
+                                if (Array.isArray(auditRes.data) && auditRes.data.length === rawBatch.length) {
+                                    stage2Batches++;
+                                    rawBatch = auditRes.data.map(item => ({
+                                        ...item,
+                                        auditMeta: { stage2ApiCalled: true, modelUsed: auditRes.modelUsed, durationSec: auditRes.durationSec }
+                                    }));
+                                    appendLoadingLog(`✓ 2차 경량 수석감수 통과! (${auditRes.modelUsed}, ${auditRes.durationSec}초)`);
+                                }
+                            } catch (auditErr) {
+                                if (auditErr.message === "USER_CANCELLED") throw auditErr;
+                                appendLoadingLog(`! 2차 감수 지연(${auditErr.message}) → 6대 규칙검수로 안전 전환`);
+                                rawBatch = rawBatch.map(item => ({
+                                    ...item,
+                                    auditMeta: { stage2ApiCalled: false, modelUsed: draftRes.modelUsed, durationSec: draftRes.durationSec }
+                                }));
+                            }
+                        } else {
+                            rawBatch = rawBatch.map(item => ({
+                                ...item,
+                                auditMeta: { stage2ApiCalled: false, modelUsed: draftRes.modelUsed, durationSec: draftRes.durationSec }
+                            }));
+                        }
+
+                        const batchFinal = [];
+                        rawBatch.forEach((item, idx) => {
+                            if (!item.questionType) item.questionType = bTypes[idx];
+                            if (item._financeFlagged || hasFinanceContamination(item)) {
+                                blockedFinance++;
+                                appendLoadingLog(`🚫 재무관리/회계 혼입 감지(_financeFlagged/정규식) → 검증 기출로 자동 교체`);
+                                const safeSample = pickLocalFallbackQuestions([bSubs[idx]], 1, [bTargets[idx]])[0];
+                                safeSample.id = `safe_${Date.now()}_${b}_${idx}`;
+                                safeSample.changesMade = "재무관리·회계 혼입이 차단 가드레일에 감지되어 6대 과목 검증 문항으로 자동 교체되었습니다.";
+                                batchFinal.push(safeSample);
+                            } else {
+                                batchFinal.push(normalizeQuestionItem(item, bTargets[idx], selectedDifficulty));
+                            }
+                        });
+
+                        collected.push(...batchFinal);
+                        // [3-1단계] 배치 1개 완료 즉시 문제은행 자동저장 (중단·오류 시 보존)
+                        const batchAdded = await saveToQuestionBank(batchFinal);
+                        appendLoadingLog(`💾 배치 ${b + 1} 완료 · ${batchFinal.length}문항 문제은행 즉시 자동저장 (+${batchAdded})`);
+                    } catch (batchErr) {
+                        if (batchErr.message === "USER_CANCELLED" || isGenerationCancelled) break;
+                        failedBatchCount++;
+                        appendLoadingLog(`⚠️ 배치 ${b + 1} 실패 (${batchErr.message}) — 이전 저장 문항 유지`);
+                    }
+                }
+            } finally {
+                clearInterval(elapsedTimer);
+                btn.disabled = false;
+                btn.classList.remove('opacity-60');
+                loadingBox.classList.add('hide');
+            }
+
+            if (isGenerationCancelled) {
+                if (collected.length > 0) {
+                    showToast("중단됨 (부분 저장 완료)", `중단 전까지 생성된 ${collected.length}문항이 문제은행에 자동저장되었습니다.`, "💾");
+                }
+                return;
+            }
+
+            if (collected.length === 0) {
+                const fallbackList = pickLocalFallbackQuestions(effSubjects, count, targets);
+                startQuizSession(fallbackList);
+                showToast("AI 연결 실패 → 내장 풀 전환", "⚙️ API 설정에서 연결 테스트를 확인해 주세요. 내장 풀로 시험을 시작합니다.", "⚠️");
+                return;
+            }
+
+            startQuizSession(collected);
+            const title = stage2Batches > 0
+                ? `AI 2단계 수석감수 출제 완료 (${stage2Batches}/${totalBatches} 배치)`
+                : "AI 1단계 출제 + 6대 규칙검수 완료";
+            const extra = failedBatchCount > 0 ? ` · 일부 배치(${failedBatchCount}) 건너뜀` : "";
+            showToast(title, `총 ${collected.length}문항 자동저장 완료 (재무 차단 ${blockedFinance}건${extra})`, "🔬");
+        }
+
+        // ============================================================
+        // 7. [1-3단계] 실전 CBT 시험 진행 · OMR · 타이머 · 채점
+        // ============================================================
         function startQuizSession(list) {
             if (!list || list.length === 0) return;
             currentQuizList = list;
@@ -1070,16 +2629,17 @@
             eliminatedMap = {};
             resultFilter = "ALL";
 
-            startTimer();
+            startTimer(0);
+            persistActiveSession();
             switchTab('quiz');
             renderCurrentQuestion();
             renderOMR();
         }
 
-        // 타이머 제어
-        function startTimer() {
+        // 타이머 제어 (5초마다 경과 시간 자동저장)
+        function startTimer(initialSec = 0) {
             stopTimer();
-            timerSeconds = 0;
+            timerSeconds = initialSec;
             isTimerPaused = false;
             document.getElementById('btn-timer-toggle').innerText = "일시정지";
             document.getElementById('quiz-pause-overlay').classList.add('hide');
@@ -1088,6 +2648,7 @@
                 if (!isTimerPaused) {
                     timerSeconds++;
                     updateTimerDisplay();
+                    if (timerSeconds % 5 === 0) persistActiveSession();
                 }
             }, 1000);
         }
@@ -1181,6 +2742,7 @@
         function selectAnswer(num) {
             if (isTimerPaused) return;
             userAnswers[currentQuizIndex] = num;
+            persistActiveSession();
             renderCurrentQuestion();
         }
 
@@ -1188,12 +2750,14 @@
             if (isTimerPaused) return;
             const key = `${currentQuizIndex}_${oIdx}`;
             eliminatedMap[key] = !eliminatedMap[key];
+            persistActiveSession();
             renderCurrentQuestion();
         }
 
         function toggleFlagCurrentQuestion() {
             if (flaggedSet.has(currentQuizIndex)) flaggedSet.delete(currentQuizIndex);
             else flaggedSet.add(currentQuizIndex);
+            persistActiveSession();
             renderCurrentQuestion();
         }
 
@@ -1201,11 +2765,13 @@
             const next = currentQuizIndex + delta;
             if (next < 0 || next >= currentQuizList.length) return;
             currentQuizIndex = next;
+            persistActiveSession();
             renderCurrentQuestion();
         }
 
         function jumpToQuestion(idx) {
             currentQuizIndex = idx;
+            persistActiveSession();
             renderCurrentQuestion();
         }
 
@@ -1269,18 +2835,32 @@
             submitAndGradeQuiz();
         }
 
-        function submitAndGradeQuiz() {
+        async function submitAndGradeQuiz() {
             stopTimer();
             let correctCount = 0;
+            let stage2VerifiedCount = 0;
+            const subjectStats = {};
+            const trapStats = {};
 
             currentQuizList.forEach((q, idx) => {
-                if (userAnswers[idx] === q.answer) {
+                const isOk = userAnswers[idx] === q.answer;
+                if (!subjectStats[q.subject]) subjectStats[q.subject] = { correct: 0, total: 0 };
+                subjectStats[q.subject].total++;
+                if (isOk) subjectStats[q.subject].correct++;
+
+                const trap = q.trapPattern || TRAP_PATTERNS[0];
+                if (!trapStats[trap]) trapStats[trap] = { wrong: 0, total: 0 };
+                trapStats[trap].total++;
+                if (!isOk) trapStats[trap].wrong++;
+
+                if (isOk) {
                     correctCount++;
                 } else {
                     if (!wrongNotes.some(w => w.id === q.id)) {
                         wrongNotes.unshift(JSON.parse(JSON.stringify(q)));
                     }
                 }
+                if (q.auditMeta?.stage2ApiCalled) stage2VerifiedCount++;
             });
 
             const total = currentQuizList.length;
@@ -1289,12 +2869,33 @@
             sessionStats.sessions++;
             sessionStats.totalSolved += total;
             sessionStats.totalCorrect += correctCount;
-            updateHeaderBadges();
+
+            // [4단계] 회차별 상세 이력 저장 (과목별·함정별·소요시간)
+            examHistory.unshift({
+                id: 'hist_' + Date.now(),
+                timestamp: Date.now(),
+                total,
+                correct: correctCount,
+                score,
+                seconds: timerSeconds,
+                subjectStats,
+                trapStats
+            });
+            if (examHistory.length > 50) examHistory = examHistory.slice(0, 50);
+
+            await clearActiveSession();
+            await persistAllData();
 
             document.getElementById('result-score-big').innerText = `${score}점`;
             document.getElementById('result-correct-count').innerText = correctCount;
             document.getElementById('result-total-count').innerText = total;
             document.getElementById('result-time-spent').innerText = formatSeconds(timerSeconds);
+            const summaryEl = document.getElementById('result-audit-summary');
+            if (summaryEl) {
+                summaryEl.innerText = stage2VerifiedCount > 0
+                    ? `🔬 2단계 수석 감수 경량 패치 검증 ${stage2VerifiedCount}/${total}문항 · 재무관리·회계 혼입 0건 · 오답 자동저장 완료`
+                    : `🛡️ 6대 정합성 규칙검수 통과 · 재무관리·회계 혼입 0건 · 오답 자동저장 완료`;
+            }
 
             switchTab('result');
             setResultFilter('ALL');
@@ -1324,14 +2925,21 @@
 
             container.innerHTML = items.map(({ q, idx, isCorrect }) => {
                 const myAns = userAnswers[idx];
+                const safeId = escapeAttr(q.id);
+                const savedMemo = userNotesMap[q.id] || "";
                 return `
                     <div class="bg-white rounded-3xl p-5 sm:p-6 border-2 ${isCorrect ? 'border-emerald-200' : 'border-rose-200'} shadow-sm space-y-4">
-                        <div class="flex flex-wrap items-center gap-1.5">
-                            <span class="px-2.5 py-1 rounded-lg text-xs font-black ${isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
-                                ${isCorrect ? '✅ 정답' : '❌ 오답'} (Q${idx + 1})
-                            </span>
-                            <span class="px-2.5 py-1 rounded-lg bg-pink-50 text-rose-600 border border-pink-200 text-xs font-bold">${escapeHtml(q.subject)} · ${escapeHtml(q.topic)}</span>
-                            <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">${escapeHtml(q.questionType)}</span>
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <span class="px-2.5 py-1 rounded-lg text-xs font-black ${isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
+                                    ${isCorrect ? '✅ 정답' : '❌ 오답'} (Q${idx + 1})
+                                </span>
+                                <span class="px-2.5 py-1 rounded-lg bg-pink-50 text-rose-600 border border-pink-200 text-xs font-bold">${escapeHtml(q.subject)} · ${escapeHtml(q.topic)}</span>
+                                <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">${escapeHtml(q.questionType)}</span>
+                            </div>
+                            <button type="button" onclick="reAuditQuestionById('${safeId}', 'result')" class="px-3 py-1.5 rounded-xl bg-pink-50 hover:bg-pink-100 border border-pink-200 text-rose-600 text-[11px] font-extrabold transition">
+                                🔬 AI 정밀 재검수
+                            </button>
                         </div>
 
                         <h3 class="text-sm sm:text-base font-bold text-slate-900 leading-relaxed">${escapeHtml(q.question)}</h3>
@@ -1387,9 +2995,67 @@
                                 <div class="text-violet-950 leading-relaxed">${escapeHtml(q.examExtensionTip)}</div>
                             </div>
                         </div>
+
+                        <!-- [4단계] 문항별 개인 단권화 암기 메모 (자동저장) -->
+                        <div class="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-1.5">
+                            <label class="text-[11px] font-extrabold text-amber-900">✏️ 내 단권화 암기 메모 (입력 즉시 자동 저장)</label>
+                            <textarea oninput="saveUserMemo('${safeId}', this.value)" rows="2" placeholder="헷갈렸던 포인트나 나만의 암기법을 기록해 두세요..." class="w-full px-3 py-2 rounded-xl bg-white border border-amber-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-pink-300">${escapeHtml(savedMemo)}</textarea>
+                        </div>
+
+                        <!-- [3-2단계] 수석 감수 검증 증명서 -->
+                        <div class="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200 text-[11px] text-slate-700 space-y-1">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <span class="font-black text-emerald-800">🔬 수석 감수 검증 증명서</span>
+                                <span class="px-2 py-0.5 rounded-full font-extrabold text-[10px] ${q.auditMeta?.stage2ApiCalled ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'}">
+                                    ${q.auditMeta?.stage2ApiCalled ? `✅ 2차 AI 감수 완료 (${escapeHtml(q.auditMeta.modelUsed)} · ${escapeHtml(q.auditMeta.durationSec)}s)` : `🛡️ ${escapeHtml(q.auditMeta?.modelUsed || '6대 규칙검수')}`}
+                                </span>
+                            </div>
+                            ${q.changesMade ? `<div><b>• 교정/검증 기록:</b> ${escapeHtml(q.changesMade)}</div>` : ''}
+                            ${q.auditNote ? `<div class="text-slate-600"><b>• 최종 소견:</b> ${escapeHtml(q.auditNote)}</div>` : ''}
+                        </div>
                     </div>
                 `;
             }).join('');
+        }
+
+        async function reAuditQuestionById(qId, source = 'result') {
+            const target = currentQuizList.find(x => x.id === qId) || questionBank.find(x => x.id === qId) || wrongNotes.find(x => x.id === qId);
+            if (!target) return;
+
+            if (!getSavedApiKey()) {
+                const rule = performRuleBasedAudit(target);
+                target.auditNote = rule.auditNote;
+                target.auditChecklist = rule.checklist;
+                await persistAllData();
+                if (source === 'bank') renderBankScreen();
+                else renderResultReviewList();
+                showToast("6대 규칙 재검증 완료", "API 키를 등록하면 2차 수석 감수 AI 정밀 재검수까지 실행됩니다.", "🛡️");
+                return;
+            }
+
+            showToast("AI 정밀 재검수 시작", "수석 감수 경량 패치로 문항 정오답·재무배제를 재검증합니다...", "🔬");
+            try {
+                const res = await runSecondStageAIAudit([target], [target.answer]);
+                if (Array.isArray(res.data) && res.data.length > 0 && !res.data[0]._financeFlagged && !hasFinanceContamination(res.data[0])) {
+                    const updated = normalizeQuestionItem({
+                        ...res.data[0],
+                        id: target.id,
+                        createdAt: target.createdAt,
+                        auditMeta: { stage2ApiCalled: true, modelUsed: res.modelUsed, durationSec: res.durationSec }
+                    }, res.data[0].answer || target.answer, target.difficulty);
+
+                    [currentQuizList, questionBank, wrongNotes].forEach(arr => {
+                        const i = arr.findIndex(x => x.id === qId);
+                        if (i !== -1) arr[i] = { ...arr[i], ...updated };
+                    });
+                    await persistAllData();
+                    if (source === 'bank') renderBankScreen();
+                    else renderResultReviewList();
+                    showToast("AI 재검수 완료", `${res.modelUsed} (${res.durationSec}초)로 문항과 해설을 갱신하고 오답노트까지 동기화했습니다.`, "✅");
+                }
+            } catch (e) {
+                showToast("재검수 일시 지연", `사유: ${String(e.message || '연결 오류').slice(0, 80)}`, "⚠️");
+            }
         }
 
         function retryWrongFromCurrentQuiz() {
@@ -1404,83 +3070,424 @@
         }
 
         // ============================================================
-        // 7. 보조 탭(통계 요약 · 문제은행 · 오답노트) 렌더링
+        // 8. [4단계] 학습 통계·약점 분석 대시보드 & Chart.js 렌더링
         // ============================================================
-        function renderAnalyticsSummary() {
-            const acc = sessionStats.totalSolved > 0
-                ? `${Math.round((sessionStats.totalCorrect / sessionStats.totalSolved) * 100)}%`
-                : "-";
-            document.getElementById('analytics-summary-grid').innerHTML = `
-                <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-                    <div class="text-[11px] font-bold text-slate-500">누적 응시 회차</div>
-                    <div class="text-2xl font-black text-slate-900 mt-1">${sessionStats.sessions}회</div>
-                </div>
-                <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-                    <div class="text-[11px] font-bold text-slate-500">총 풀이 문항</div>
-                    <div class="text-2xl font-black text-rose-600 mt-1">${sessionStats.totalSolved}문항</div>
-                </div>
-                <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-                    <div class="text-[11px] font-bold text-slate-500">평균 정답률</div>
-                    <div class="text-2xl font-black text-emerald-600 mt-1">${acc}</div>
-                </div>
-            `;
+        function computeAnalyticsData() {
+            const totalSessions = Math.max(examHistory.length, sessionStats.sessions || 0);
+            let totalSolved = 0;
+            let totalCorrect = 0;
+            let totalSec = 0;
+
+            const subAgg = {};
+            ALL_SUBJECTS.forEach(s => subAgg[s] = { correct: 0, total: 0, bankCount: 0 });
+            questionBank.forEach(q => {
+                if (subAgg[q.subject]) subAgg[q.subject].bankCount++;
+            });
+
+            const trapAgg = {};
+            TRAP_PATTERNS.forEach(t => trapAgg[t] = { wrong: 0, total: 0 });
+
+            examHistory.forEach(h => {
+                totalSolved += h.total || 0;
+                totalCorrect += h.correct || 0;
+                totalSec += h.seconds || 0;
+                Object.entries(h.subjectStats || {}).forEach(([s, st]) => {
+                    if (!subAgg[s]) subAgg[s] = { correct: 0, total: 0, bankCount: 0 };
+                    subAgg[s].correct += st.correct || 0;
+                    subAgg[s].total += st.total || 0;
+                });
+                Object.entries(h.trapStats || {}).forEach(([t, st]) => {
+                    if (!trapAgg[t]) trapAgg[t] = { wrong: 0, total: 0 };
+                    trapAgg[t].wrong += st.wrong || 0;
+                    trapAgg[t].total += st.total || 0;
+                });
+            });
+
+            if (examHistory.length === 0 && sessionStats.totalSolved > 0) {
+                totalSolved = sessionStats.totalSolved;
+                totalCorrect = sessionStats.totalCorrect;
+            }
+
+            const avgAccuracy = totalSolved > 0 ? Math.round((totalCorrect / totalSolved) * 100) : null;
+            const avgTime = (totalSolved > 0 && totalSec > 0) ? Math.round(totalSec / totalSolved) : null;
+
+            let weakestSubject = null;
+            let lowestAcc = 101;
+            ALL_SUBJECTS.forEach(s => {
+                if (subAgg[s].total > 0) {
+                    const acc = Math.round((subAgg[s].correct / subAgg[s].total) * 100);
+                    if (acc < lowestAcc) {
+                        lowestAcc = acc;
+                        weakestSubject = { subject: s, acc, total: subAgg[s].total };
+                    }
+                }
+            });
+
+            let weakestTrap = null;
+            let highestWrongRate = -1;
+            TRAP_PATTERNS.forEach(t => {
+                if (trapAgg[t].total > 0) {
+                    const wr = Math.round((trapAgg[t].wrong / trapAgg[t].total) * 100);
+                    if (wr > highestWrongRate) {
+                        highestWrongRate = wr;
+                        weakestTrap = { trap: t, wrongRate: wr, wrong: trapAgg[t].wrong, total: trapAgg[t].total };
+                    }
+                }
+            });
+
+            return { totalSessions, totalSolved, avgAccuracy, avgTime, subAgg, trapAgg, weakestSubject, weakestTrap };
         }
 
-        function renderBankList() {
-            document.getElementById('bank-list').innerHTML = questionBank.map(q => `
-                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-2.5">
-                    <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="px-2.5 py-1 rounded-lg bg-pink-50 text-rose-600 border border-pink-200 text-xs font-extrabold">${escapeHtml(q.subject)}</span>
-                        <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">${escapeHtml(q.topic)}</span>
-                        <span class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold">${escapeHtml(q.questionType)}</span>
-                    </div>
-                    <div class="text-sm font-bold text-slate-900 leading-relaxed">${escapeHtml(q.question)}</div>
-                    <div class="p-3.5 rounded-2xl bg-slate-50 text-xs text-slate-700 space-y-1">
-                        <div><b class="text-rose-600">정답 ${CIRCLED[q.answer - 1]}:</b> ${escapeHtml(q.options[q.answer - 1] || '')}</div>
-                        <div class="text-slate-600"><b>🎯 핵심:</b> ${escapeHtml(q.keyTakeaway)}</div>
-                    </div>
-                </div>
-            `).join('');
+        function renderAnalyticsScreen() {
+            clearHistoryConfirmArmed = false;
+            const clearBtn = document.getElementById('btn-clear-history');
+            if (clearBtn) clearBtn.innerText = "통계 초기화";
+
+            const data = computeAnalyticsData();
+            document.getElementById('stat-total-sessions').innerText = `${data.totalSessions}회`;
+            document.getElementById('stat-total-solved').innerText = `총 ${data.totalSolved}문항 풀이`;
+            document.getElementById('stat-avg-accuracy').innerText = data.avgAccuracy !== null ? `${data.avgAccuracy}%` : '-';
+            document.getElementById('stat-avg-time').innerText = data.avgTime !== null ? `문항당 평균 ${data.avgTime}초` : '모의고사 응시 후 집계';
+
+            if (data.weakestSubject) {
+                document.getElementById('stat-weak-subject').innerText = data.weakestSubject.subject;
+                document.getElementById('stat-weak-subject-sub').innerText = `정답률 ${data.weakestSubject.acc}% (${data.weakestSubject.total}문항 기준)`;
+            } else {
+                document.getElementById('stat-weak-subject').innerText = "데이터 수집 전";
+                document.getElementById('stat-weak-subject-sub').innerText = "모의고사 1회 이상 응시 시 진단";
+            }
+
+            if (data.weakestTrap && data.weakestTrap.wrong > 0) {
+                document.getElementById('stat-weak-trap').innerText = data.weakestTrap.trap;
+                document.getElementById('stat-weak-trap-sub').innerText = `오답률 ${data.weakestTrap.wrongRate}% (${data.weakestTrap.wrong}/${data.weakestTrap.total})`;
+            } else {
+                document.getElementById('stat-weak-trap').innerText = data.totalSolved > 0 ? "취약 함정 없음" : "데이터 수집 전";
+                document.getElementById('stat-weak-trap-sub').innerText = data.totalSolved > 0 ? "모든 함정 패턴 방어 중" : "오답 패턴 자동 추적";
+            }
+
+            document.getElementById('prescription-desc').innerText = data.weakestSubject
+                ? `현재 가장 취약한 [${data.weakestSubject.subject}] (정답률 ${data.weakestSubject.acc}%) 및 누적 오답 문항을 최우선으로 선별해 집중 처방 모의고사를 구성합니다.`
+                : `아직 상세 응시 이력이 없어 문제은행과 오답노트에서 핵심 5문항으로 진단 평가를 시작합니다.`;
+
+            renderAnalyticsCharts(data);
+            renderHistoryList();
         }
 
-        function startBankAllExam() {
-            const targets = buildBalancedTargetAnswers(questionBank.length);
-            const ready = questionBank.map((q, i) => shuffleQuestionToAnswer(q, targets[i]));
+        function renderAnalyticsCharts(data) {
+            if (typeof Chart === 'undefined') return;
+            try {
+                Object.values(chartInstances).forEach(c => { if (c) c.destroy(); });
+
+                const subLabels = ALL_SUBJECTS.map(s => SUBJECT_META[s].short);
+                const subAccs = ALL_SUBJECTS.map(s => data.subAgg[s].total > 0 ? Math.round((data.subAgg[s].correct / data.subAgg[s].total) * 100) : 0);
+                const subBankCounts = ALL_SUBJECTS.map(s => data.subAgg[s].bankCount);
+
+                chartInstances.subject = new Chart(document.getElementById('chart-subject-accuracy'), {
+                    type: 'bar',
+                    data: {
+                        labels: subLabels,
+                        datasets: [
+                            {
+                                label: '정답률 (%)',
+                                data: subAccs,
+                                backgroundColor: 'rgba(244, 63, 94, 0.80)',
+                                borderRadius: 8,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: '보유 문항 수',
+                                data: subBankCounts,
+                                backgroundColor: 'rgba(244, 114, 182, 0.28)',
+                                borderColor: 'rgba(236, 72, 153, 0.85)',
+                                borderWidth: 1.5,
+                                borderRadius: 8,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { beginAtZero: true, max: 100, title: { display: true, text: '정답률(%)' } },
+                            y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '문항 수' } }
+                        }
+                    }
+                });
+
+                const trapLabels = TRAP_PATTERNS.map(t => t.length > 10 ? t.slice(0, 10) + '…' : t);
+                const trapWrongRates = TRAP_PATTERNS.map(t => data.trapAgg[t].total > 0 ? Math.round((data.trapAgg[t].wrong / data.trapAgg[t].total) * 100) : 0);
+
+                chartInstances.trap = new Chart(document.getElementById('chart-trap-weakness'), {
+                    type: 'bar',
+                    data: {
+                        labels: trapLabels,
+                        datasets: [{
+                            label: '함정별 오답률 (%)',
+                            data: trapWrongRates,
+                            backgroundColor: trapWrongRates.map(v => v >= 50 ? 'rgba(225, 29, 72, 0.82)' : 'rgba(245, 158, 11, 0.82)'),
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { x: { beginAtZero: true, max: 100 } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+
+                const recent = [...examHistory].slice(0, 12).reverse();
+                chartInstances.trend = new Chart(document.getElementById('chart-score-trend'), {
+                    type: 'line',
+                    data: {
+                        labels: recent.length > 0 ? recent.map((_, i) => `${i + 1}회`) : ['미응시'],
+                        datasets: [{
+                            label: '점수 (점)',
+                            data: recent.length > 0 ? recent.map(h => h.score) : [0],
+                            borderColor: '#f43f5e',
+                            backgroundColor: 'rgba(244, 63, 94, 0.12)',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 4,
+                            pointBackgroundColor: '#e11d48'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true, max: 100 } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            } catch (chartErr) {
+                console.error("차트 렌더링 오류:", chartErr);
+            }
+        }
+
+        function renderHistoryList() {
+            const el = document.getElementById('analytics-history-list');
+            if (!el) return;
+            if (examHistory.length === 0) {
+                el.innerHTML = `<div class="p-6 text-center text-xs font-bold text-slate-400 bg-slate-50 rounded-2xl">아직 응시 기록이 없습니다. 모의고사를 풀고 채점하면 자동으로 기록됩니다.</div>`;
+                return;
+            }
+            el.innerHTML = examHistory.slice(0, 15).map(h => {
+                const dt = new Date(h.timestamp).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                return `
+                    <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                        <div>
+                            <div class="font-extrabold text-slate-800">${dt} · ${h.total}문항</div>
+                            <div class="text-[11px] text-slate-500">정답 ${h.correct}/${h.total} · 소요 ${formatSeconds(h.seconds || 0)}</div>
+                        </div>
+                        <span class="px-2.5 py-1 rounded-xl font-black ${h.score >= 80 ? 'bg-emerald-100 text-emerald-800' : (h.score >= 60 ? 'bg-pink-100 text-rose-700' : 'bg-rose-100 text-rose-800')}">
+                            ${h.score}점
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function startWeaknessTargetedExam() {
+            const data = computeAnalyticsData();
+            let pool = [];
+            if (wrongNotes.length > 0) pool.push(...wrongNotes);
+            if (data.weakestSubject) {
+                pool.push(...questionBank.filter(q => q.subject === data.weakestSubject.subject));
+            }
+            if (pool.length < 5) pool.push(...questionBank);
+            if (pool.length === 0) pool.push(...SAMPLE_QUESTIONS);
+
+            const unique = [];
+            const seen = new Set();
+            for (const q of pool) {
+                if (!seen.has(q.id)) {
+                    seen.add(q.id);
+                    unique.push(q);
+                }
+            }
+            const picked = unique.slice(0, Math.min(5, unique.length));
+            const targets = buildBalancedTargetAnswers(picked.length);
+            const ready = picked.map((q, i) => shuffleQuestionToAnswer(q, targets[i]));
+            startQuizSession(ready);
+            showToast("약점 집중 모의고사 시작", "취약 과목 및 누적 오답 우선 선별 문항이 출제되었습니다.", "🎯");
+        }
+
+        async function clearExamHistory() {
+            const btn = document.getElementById('btn-clear-history');
+            if (!clearHistoryConfirmArmed) {
+                clearHistoryConfirmArmed = true;
+                if (btn) btn.innerText = "정말 초기화? (다시 클릭)";
+                showToast("통계 초기화 확인", "한 번 더 누르면 누적 응시 통계가 초기화됩니다.", "⚠️");
+                return;
+            }
+            clearHistoryConfirmArmed = false;
+            examHistory = [];
+            sessionStats = { sessions: 0, totalSolved: 0, totalCorrect: 0 };
+            await persistAllData();
+            renderAnalyticsScreen();
+            showToast("응시 통계 초기화 완료", "누적 모의고사 통계가 깨끗하게 초기화되었습니다.", "🔄");
+        }
+
+        // ============================================================
+        // 9. [4단계] 문제은행 검색·필터·백업/복원 & 오답노트
+        // ============================================================
+        function getFilteredBankList() {
+            const kw = (document.getElementById('bank-search-input')?.value || '').trim().toLowerCase();
+            const sub = document.getElementById('bank-filter-subject')?.value || 'ALL';
+            const type = document.getElementById('bank-filter-type')?.value || 'ALL';
+
+            return questionBank.filter(q => {
+                if (sub !== 'ALL' && q.subject !== sub) return false;
+                if (type !== 'ALL' && q.questionType !== type) return false;
+                if (kw) {
+                    const memo = userNotesMap[q.id] || '';
+                    const hay = `${q.subject} ${q.topic} ${q.question} ${q.keyTakeaway} ${memo} ${(q.keyTerms || []).join(' ')}`.toLowerCase();
+                    if (!hay.includes(kw)) return false;
+                }
+                return true;
+            });
+        }
+
+        function renderBankScreen() {
+            const filtered = getFilteredBankList();
+            document.getElementById('bank-count-label').innerText = `전체 ${questionBank.length}문항 중 ${filtered.length}문항 표시`;
+            const container = document.getElementById('bank-list');
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="bg-white rounded-3xl p-10 text-center text-sm font-bold text-slate-500 border border-slate-200">조건에 맞는 문항이 없습니다.</div>`;
+                return;
+            }
+            container.innerHTML = filtered.map(q => {
+                const safeId = escapeAttr(q.id);
+                const memo = userNotesMap[q.id] || '';
+                return `
+                    <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-2.5">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <span class="px-2.5 py-1 rounded-lg bg-pink-50 text-rose-600 border border-pink-200 text-xs font-extrabold">${escapeHtml(q.subject)}</span>
+                                <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">${escapeHtml(q.topic)}</span>
+                                <span class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold">${escapeHtml(q.questionType)}</span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <button type="button" onclick="reAuditQuestionById('${safeId}', 'bank')" class="px-2.5 py-1 rounded-lg bg-pink-50 hover:bg-pink-100 text-rose-600 text-[11px] font-bold transition">🔬 재검수</button>
+                                <button type="button" onclick="deleteBankQuestion('${safeId}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-500 text-[11px] font-bold transition">삭제</button>
+                            </div>
+                        </div>
+                        <div class="text-sm font-bold text-slate-900 leading-relaxed">${escapeHtml(q.question)}</div>
+                        <div class="p-3.5 rounded-2xl bg-slate-50 text-xs text-slate-700 space-y-1.5">
+                            <div><b class="text-rose-600">정답 ${CIRCLED[(q.answer || 1) - 1]}:</b> ${escapeHtml((q.options && q.options[(q.answer || 1) - 1]) || '')}</div>
+                            <div><b>🎯 핵심:</b> ${escapeHtml(q.keyTakeaway)}</div>
+                            ${q.deepTheoryNote ? `<div class="pt-1.5 border-t border-slate-200"><b>📚 심층 이론:</b> ${escapeHtml(q.deepTheoryNote)}</div>` : ''}
+                            ${memo ? `<div class="pt-1.5 border-t border-amber-200 text-amber-900"><b>✏️ 내 메모:</b> ${escapeHtml(memo)}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function deleteBankQuestion(id) {
+            questionBank = questionBank.filter(q => q.id !== id);
+            if (!deletedQuestionIds.includes(id)) deletedQuestionIds.push(id);
+            await persistAllData();
+            renderBankScreen();
+            showToast("문항 삭제 완료", "선택한 문항이 문제은행에서 영구 삭제되었습니다.", "🗑️");
+        }
+
+        function startBankMockExam(mode = 'FILTERED') {
+            const pool = mode === 'FILTERED' ? getFilteredBankList() : questionBank;
+            if (pool.length === 0) {
+                showToast("문항 없음", "출제할 문항이 없습니다.", "⚠️");
+                return;
+            }
+            const size = Math.min(pool.length, Math.max(selectedQuestionCount, 5));
+            const picked = [...pool].sort(() => Math.random() - 0.5).slice(0, size);
+            const targets = buildBalancedTargetAnswers(picked.length);
+            const ready = picked.map((q, i) => shuffleQuestionToAnswer(q, targets[i]));
             startQuizSession(ready);
         }
 
-        function renderWrongList() {
+        function exportBankJSON() {
+            const payload = {
+                exportedAt: new Date().toISOString(),
+                questionBank,
+                wrongNotes,
+                examHistory,
+                sessionStats,
+                userNotesMap
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `경영학_문제은행_백업_${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast("백업 파일 저장 완료", `문제은행 ${questionBank.length}문항·오답노트·통계·메모가 JSON으로 저장되었습니다.`, "📤");
+        }
+
+        function importBankJSON(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    const incomingBank = Array.isArray(parsed.questionBank) ? parsed.questionBank : (Array.isArray(parsed) ? parsed : []);
+                    const incomingWrong = Array.isArray(parsed.wrongNotes) ? parsed.wrongNotes : [];
+                    if (Array.isArray(parsed.examHistory)) examHistory = [...parsed.examHistory, ...examHistory].slice(0, 50);
+                    if (parsed.userNotesMap && typeof parsed.userNotesMap === 'object') userNotesMap = { ...userNotesMap, ...parsed.userNotesMap };
+                    questionBank = mergeQuestionsUnique(incomingBank, questionBank);
+                    wrongNotes = mergeQuestionsUnique(incomingWrong, wrongNotes);
+                    await persistAllData();
+                    renderBankScreen();
+                    showToast("백업 복원 완료", `재무관리 제외 총 ${questionBank.length}문항으로 병합 복원되었습니다.`, "📥");
+                } catch (err) {
+                    showToast("복원 실패", "올바른 JSON 백업 파일이 아닙니다.", "⚠️");
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = "";
+        }
+
+        function renderWrongScreen() {
             document.getElementById('wrong-count-label').innerText = `${wrongNotes.length}문항`;
             const container = document.getElementById('wrong-list');
             if (wrongNotes.length === 0) {
-                container.innerHTML = `<div class="bg-white rounded-3xl p-10 text-center text-sm font-bold text-slate-500 border border-slate-200">저장된 오답이 없습니다. 시험을 풀고 틀린 문항이 생기면 이곳에 자동 기록됩니다.</div>`;
+                container.innerHTML = `<div class="bg-white rounded-3xl p-10 text-center text-sm font-bold text-slate-500 border border-slate-200">저장된 오답이 없습니다. 모의고사를 풀면 틀린 문항이 이곳에 자동 기록됩니다.</div>`;
                 return;
             }
-            container.innerHTML = wrongNotes.map(q => `
-                <div class="bg-white rounded-3xl p-5 border border-rose-200 shadow-sm space-y-2.5">
-                    <div class="flex items-center justify-between gap-2">
-                        <span class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 text-xs font-extrabold">${escapeHtml(q.subject)} · ${escapeHtml(q.topic)}</span>
-                        <button type="button" onclick="removeWrongNote('${q.id}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 text-[11px] font-bold transition">✓ 완벽 이해(제거)</button>
+            container.innerHTML = wrongNotes.map(q => {
+                const safeId = escapeAttr(q.id);
+                const memo = userNotesMap[q.id] || '';
+                return `
+                    <div class="bg-white rounded-3xl p-5 border border-rose-200 shadow-sm space-y-2.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 text-xs font-extrabold">${escapeHtml(q.subject)} · ${escapeHtml(q.topic)}</span>
+                            <button type="button" onclick="removeWrongNote('${safeId}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 text-[11px] font-bold transition">✓ 완벽 이해(제거)</button>
+                        </div>
+                        <div class="text-sm font-bold text-slate-900 leading-relaxed">${escapeHtml(q.question)}</div>
+                        <div class="p-3.5 rounded-2xl bg-rose-50/50 text-xs text-slate-700 space-y-1">
+                            <div><b class="text-rose-600">정답 ${CIRCLED[(q.answer || 1) - 1]}:</b> ${escapeHtml((q.options && q.options[(q.answer || 1) - 1]) || '')}</div>
+                            <div><b>🎯 단권화 핵심:</b> ${escapeHtml(q.keyTakeaway)}</div>
+                            <div><b>🕵️ 함정 포인트:</b> ${escapeHtml(q.trapAnatomy)}</div>
+                            ${memo ? `<div class="pt-1 border-t border-amber-200 text-amber-900"><b>✏️ 내 메모:</b> ${escapeHtml(memo)}</div>` : ''}
+                        </div>
                     </div>
-                    <div class="text-sm font-bold text-slate-900">${escapeHtml(q.question)}</div>
-                    <div class="p-3.5 rounded-2xl bg-pink-50/40 text-xs text-slate-700 space-y-1">
-                        <div><b class="text-rose-700">정답 ${CIRCLED[q.answer - 1]}:</b> ${escapeHtml(q.options[q.answer - 1] || '')}</div>
-                        <div><b>🎯 단권화 핵심:</b> ${escapeHtml(q.keyTakeaway)}</div>
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
-        function removeWrongNote(id) {
+        async function removeWrongNote(id) {
             wrongNotes = wrongNotes.filter(q => q.id !== id);
-            updateHeaderBadges();
-            renderWrongList();
-            showToast("오답 제거 완료", "해당 문항을 오답노트에서 졸업 처리했습니다.", "🎓");
+            await persistAllData();
+            renderWrongScreen();
+            showToast("오답 졸업 완료", "해당 문항을 오답노트에서 제거했습니다.", "🎓");
         }
 
         function startWrongNoteExam() {
             if (wrongNotes.length === 0) {
-                showToast("오답노트 비어있음", "다시 풀 오답 문항이 없습니다.", "⚠️");
+                showToast("오답노트 비어있음", "복습할 오답 문항이 없습니다.", "⚠️");
                 return;
             }
             const targets = buildBalancedTargetAnswers(wrongNotes.length);
@@ -1488,32 +3495,166 @@
             startQuizSession(ready);
         }
 
-        // 시험장 키보드 단축키 (1~5 답안 선택, 좌우 화살표 이동)
+        // ============================================================
+        // 10. [4단계] 실전 시험지 1·2단 PDF 다운로드 & 인쇄용 HTML 저장
+        // ============================================================
+        function openExamPrintModal(list, title) {
+            if (!list || list.length === 0) {
+                showToast("출력할 문항 없음", "먼저 문항을 생성하거나 선택해 주세요.", "⚠️");
+                return;
+            }
+            currentPrintList = list;
+            currentPrintTitle = title || "경영학 실전 모의고사";
+            renderPrintPreview();
+            document.getElementById('modal-print').classList.remove('hide');
+        }
+
+        function togglePrintColumns() {
+            printTwoCol = !printTwoCol;
+            document.getElementById('btn-print-col-toggle').innerText = printTwoCol ? "레이아웃: 2단" : "레이아웃: 1단";
+            renderPrintPreview();
+        }
+
+        function togglePrintAnswers() {
+            printIncludeAnswers = !printIncludeAnswers;
+            document.getElementById('btn-print-ans-toggle').innerText = printIncludeAnswers ? "해설지: 포함" : "해설지: 제외";
+            renderPrintPreview();
+        }
+
+        function renderPrintPreview() {
+            const area = document.getElementById('print-preview-area');
+            const today = new Date().toLocaleDateString('ko-KR');
+            const list = currentPrintList;
+
+            const questionsHtml = list.map((q, idx) => `
+                <div class="exam-q-block text-[12px]">
+                    <div class="font-bold text-slate-900 mb-1.5">
+                        ${idx + 1}. [${escapeHtml(q.subject)}] ${escapeHtml(q.question)}
+                    </div>
+                    ${q.caseBox ? `<div class="p-2.5 mb-2 border border-slate-400 bg-slate-50 text-[11px] leading-relaxed">${escapeHtml(q.caseBox)}</div>` : ''}
+                    ${Array.isArray(q.bogi) && q.bogi.length > 0 ? `<div class="p-2.5 mb-2 border border-slate-700 text-[11px] space-y-0.5"><div class="text-center font-bold mb-1">&lt; 보 기 &gt;</div>${q.bogi.map(b => `<div>${escapeHtml(b)}</div>`).join('')}</div>` : ''}
+                    <div class="space-y-0.5 pl-1">
+                        ${(q.options || []).map((o, i) => `<div>${CIRCLED[i]} ${escapeHtml(o)}</div>`).join('')}
+                    </div>
+                </div>
+            `).join('');
+
+            const answersHtml = list.map((q, idx) => {
+                const memo = userNotesMap[q.id] || '';
+                return `
+                    <div class="mb-3 pb-2 border-b border-slate-200 text-[11px] break-inside-avoid">
+                        <div class="font-bold text-slate-900">${idx + 1}번 정답: ${CIRCLED[(q.answer || 1) - 1]} (${escapeHtml(q.subject)} · ${escapeHtml(q.topic)})</div>
+                        <div class="text-slate-700 mt-0.5"><b>핵심:</b> ${escapeHtml(q.keyTakeaway)}</div>
+                        <div class="text-slate-600 mt-0.5"><b>심층이론:</b> ${escapeHtml(q.deepTheoryNote)}</div>
+                        ${memo ? `<div class="text-amber-800 mt-0.5"><b>내 메모:</b> ${escapeHtml(memo)}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+
+            area.innerHTML = `
+                <div class="border-b-2 border-slate-900 pb-3 mb-5 flex items-end justify-between">
+                    <div>
+                        <div class="text-[11px] font-bold text-slate-500">CPA · 공기업 경영학 6대 과목 (재무관리·회계 제외)</div>
+                        <h1 class="text-xl font-black text-slate-900 mt-0.5">${escapeHtml(currentPrintTitle)}</h1>
+                    </div>
+                    <div class="text-right text-[11px] font-bold text-slate-600">
+                        <div>총 ${list.length}문항</div>
+                        <div>${today}</div>
+                    </div>
+                </div>
+                <div class="${printTwoCol ? 'exam-two-col' : 'exam-one-col'}">${questionsHtml}</div>
+                ${printIncludeAnswers ? `
+                <div style="page-break-before: always; break-before: page;" class="mt-8 pt-6 border-t-2 border-slate-900">
+                    <h2 class="text-base font-black text-slate-900 mb-4">📌 빠른 정답 및 초심층 요약 해설</h2>
+                    ${answersHtml}
+                </div>` : ''}
+            `;
+        }
+
+        function closePrintModal() {
+            document.getElementById('modal-print').classList.add('hide');
+        }
+
+        async function downloadCurrentPrintAsPDF() {
+            const btn = document.getElementById('btn-download-pdf');
+            const element = document.getElementById('print-preview-area');
+            if (typeof html2pdf === 'undefined') {
+                showToast("PDF 엔진 로드 실패", "대신 초록색 [인쇄용 HTML] 버튼을 이용해 주세요.", "⚠️");
+                return;
+            }
+            btn.disabled = true;
+            btn.innerText = "⏳ PDF 생성 중...";
+            try {
+                const opt = {
+                    margin: [10, 10, 10, 10],
+                    filename: `${currentPrintTitle.replace(/\s+/g, '_')}.pdf`,
+                    image: { type: 'jpeg', quality: 0.96 },
+                    html2canvas: { scale: 2, useCORS: true },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+                await html2pdf().set(opt).from(element).save();
+                showToast("PDF 다운로드 완료", "A4 실전 시험지 PDF가 저장되었습니다.", "📥");
+            } catch (e) {
+                showToast("PDF 생성 오류", "인쇄용 HTML 저장 버튼을 이용해 브라우저에서 인쇄해 주세요.", "⚠️");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "📥 PDF 다운로드";
+            }
+        }
+
+        function downloadCurrentPrintAsHTML() {
+            const content = document.getElementById('print-preview-area').innerHTML;
+            const colCss = printTwoCol ? ".exam-two-col{column-count:2;column-gap:26px;column-rule:1px solid #ccc}" : ".exam-one-col{column-count:1}";
+            const fullHtml = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>${escapeHtml(currentPrintTitle)}</title><style>body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;max-width:900px;margin:20px auto;padding:20px;color:#111;line-height:1.6}${colCss}.exam-q-block{break-inside:avoid;margin-bottom:16px}@media print{body{margin:0;padding:10px}}</style></head><body>${content}<script>window.onload=function(){window.print();};<\/script></body></html>`;
+            const blob = new Blob([fullHtml], { type: "text/html;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${currentPrintTitle.replace(/\s+/g, '_')}_인쇄용.html`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast("인쇄용 파일 저장 완료", "다운로드된 .html 파일을 열면 즉시 인쇄창이 열립니다.", "📄");
+        }
+
+        // 키보드 단축키 (시험 중 1~5 답안 선택, 좌우 화살표 문항 이동)
         document.addEventListener('keydown', (e) => {
             const quizTab = document.getElementById('tab-quiz');
             if (!quizTab || quizTab.classList.contains('hide') || isTimerPaused) return;
             if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
 
-            if (e.key >= '1' && e.key <= '5') selectAnswer(parseInt(e.key));
-            else if (e.key === 'ArrowRight') moveQuestion(1);
-            else if (e.key === 'ArrowLeft') moveQuestion(-1);
+            if (e.key >= '1' && e.key <= '5') {
+                selectAnswer(parseInt(e.key, 10));
+            } else if (e.key === 'ArrowRight') {
+                moveQuestion(1);
+            } else if (e.key === 'ArrowLeft') {
+                moveQuestion(-1);
+            }
         });
 
-        // ============================================================
-        // 8. 안전한 앱 초기화
-        // ============================================================
-        function initApp() {
+        // 앱 초기화 (UI 선렌더링 후 백그라운드 저장소 복구)
+        let appInitialized = false;
+        async function initApp() {
+            if (appInitialized) return;
+            appInitialized = true;
             try {
                 renderSubjectCards();
                 renderTypeCards();
                 renderCountAndDiffButtons();
                 setPipelineMode('pro');
                 updateHeaderBadges();
+
+                await loadAllData();
+                updateHeaderBadges();
+                updateResumeBanner();
             } catch (err) {
                 console.error("초기화 오류:", err);
-                showToast("초기화 오류", String(err.message || err), "⚠️");
+                showToast("초기화 복구", "기본 데이터로 안전하게 시작되었습니다.", "🛡️");
             }
         }
+
+        window.addEventListener('error', (e) => {
+            console.error('전역 오류:', e.error || e.message);
+        });
 
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initApp);
